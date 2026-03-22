@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { createChart } from 'lightweight-charts';
+import { useState, useRef, useEffect } from 'react';
+import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import { usePrices } from '../../hooks/useStockData';
 
 /* ────────────────────────────────────────────
@@ -93,7 +93,7 @@ function PriceTab({ ticker, company }) {
       },
     });
 
-    const candleSeries = chart.addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: COLORS.up,
       downColor: COLORS.down,
       wickUpColor: COLORS.up,
@@ -102,7 +102,7 @@ function PriceTab({ ticker, company }) {
       borderDownColor: COLORS.down,
     });
 
-    const volumeSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addSeries(HistogramSeries, {
       color: COLORS.volumeTeal,
       priceFormat: {
         type: 'volume',
