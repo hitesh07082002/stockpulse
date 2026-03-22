@@ -9,12 +9,22 @@ class CompanyListSerializer(serializers.ModelSerializer):
 
 
 class CompanyDetailSerializer(serializers.ModelSerializer):
+    pe_ratio = serializers.DecimalField(
+        source='metrics.pe_ratio', max_digits=10, decimal_places=2,
+        read_only=True, allow_null=True, default=None,
+    )
+    dividend_yield = serializers.DecimalField(
+        source='metrics.dividend_yield', max_digits=6, decimal_places=4,
+        read_only=True, allow_null=True, default=None,
+    )
+
     class Meta:
         model = Company
         fields = [
             'ticker', 'name', 'cik', 'sector', 'industry', 'description',
             'current_price', 'market_cap', 'week_52_high', 'week_52_low',
             'shares_outstanding', 'price_updated_at',
+            'pe_ratio', 'dividend_yield',
         ]
 
 
