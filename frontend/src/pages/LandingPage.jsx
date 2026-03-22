@@ -14,30 +14,30 @@ const TICKER_DATA = [
 ];
 
 const TOP_GAINERS = [
-  { ticker: 'SMCI',  change: '+12.43%', volume: '38.2M' },
-  { ticker: 'ENPH',  change: '+8.17%',  volume: '14.7M' },
-  { ticker: 'SEDG',  change: '+6.92%',  volume: '9.1M' },
-  { ticker: 'MRNA',  change: '+5.48%',  volume: '11.3M' },
-  { ticker: 'DXCM',  change: '+4.81%',  volume: '6.8M' },
+  { ticker: 'NVDA',  change: '+3.42%', volume: '68.3M' },
+  { ticker: 'AVGO',  change: '+2.87%', volume: '14.7M' },
+  { ticker: 'META',  change: '+2.15%', volume: '22.1M' },
+  { ticker: 'AMZN',  change: '+1.93%', volume: '38.5M' },
+  { ticker: 'NFLX',  change: '+1.48%', volume: '8.2M' },
 ];
 
 const TOP_LOSERS = [
-  { ticker: 'PARA',  change: '-7.61%',  volume: '22.4M' },
-  { ticker: 'WBA',   change: '-5.33%',  volume: '18.9M' },
-  { ticker: 'FMC',   change: '-4.89%',  volume: '5.2M' },
-  { ticker: 'PAYC',  change: '-3.72%',  volume: '3.1M' },
-  { ticker: 'BIO',   change: '-3.14%',  volume: '1.9M' },
+  { ticker: 'PFE',   change: '-3.61%', volume: '42.4M' },
+  { ticker: 'NKE',   change: '-2.33%', volume: '18.9M' },
+  { ticker: 'DIS',   change: '-1.89%', volume: '15.2M' },
+  { ticker: 'VZ',    change: '-1.52%', volume: '13.1M' },
+  { ticker: 'KO',    change: '-0.94%', volume: '11.9M' },
 ];
 
 const MOST_ACTIVE = [
-  { ticker: 'TSLA',  change: '+2.15%',  volume: '112.6M' },
-  { ticker: 'NVDA',  change: '-1.05%',  volume: '68.3M' },
-  { ticker: 'AAPL',  change: '+1.22%',  volume: '54.1M' },
-  { ticker: 'AMD',   change: '+0.78%',  volume: '49.8M' },
-  { ticker: 'SMCI',  change: '+12.43%', volume: '38.2M' },
+  { ticker: 'NVDA',  change: '+3.42%', volume: '68.3M' },
+  { ticker: 'AAPL',  change: '+1.22%', volume: '54.1M' },
+  { ticker: 'AMD',   change: '+0.78%', volume: '49.8M' },
+  { ticker: 'MSFT',  change: '-0.38%', volume: '32.6M' },
+  { ticker: 'META',  change: '+2.15%', volume: '22.1M' },
 ];
 
-const QUICK_TICKERS = ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'JPM'];
+const QUICK_TICKERS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'JPM'];
 
 /* ------------------------------------------------------------------ */
 /*  SearchBar Component                                                */
