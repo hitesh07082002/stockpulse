@@ -47,3 +47,33 @@ def test_derive_quarter_from_ytd_is_deterministic():
     assert derived["fiscal_quarter"] == 2
     assert derived["is_derived"] is True
     assert derived["selection_reason"] == "derived_from_ytd"
+
+
+def test_select_annual_fact_handles_duplicate_rank_candidates_without_crashing():
+    entries = [
+        {
+            "metric_key": "revenue",
+            "tag": "Revenues",
+            "unit": "USD",
+            "form": "10-K",
+            "filed": "2025-02-01",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "val": 100,
+        },
+        {
+            "metric_key": "revenue",
+            "tag": "Revenues",
+            "unit": "USD",
+            "form": "10-K",
+            "filed": "2025-02-01",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "val": 100,
+        },
+    ]
+
+    selected = select_annual_fact(entries, metric_key="revenue")
+
+    assert selected is not None
+    assert selected["val"] == 100

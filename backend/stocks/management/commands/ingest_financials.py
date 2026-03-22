@@ -1,31 +1,42 @@
 """
-ingest_financials — Fetch SEC EDGAR XBRL company facts and upsert FinancialFact rows.
+ingest_financials — Fetch SEC EDGAR company facts and rebuild canonical FinancialFact rows.
 
 Usage:
-    python manage.py ingest_financials              # all companies, skip recent
-    python manage.py ingest_financials --ticker AAPL # single company
-    python manage.py ingest_financials --force       # ignore 7-day cooldown
+    python manage.py ingest_financials
+    python manage.py ingest_financials --ticker AAPL
+    python manage.py ingest_financials --force
 """
 
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 import time
 import traceback
-from datetime import date, timedelta
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
-from stocks.models import Company, FinancialFact, IngestionLog
-from stocks.xbrl_mapping import ANNUAL_FORMS, QUARTERLY_FORMS, XBRL_METRIC_MAP
+from stocks.metric_registry import (
+    get_metric_definition,
+    list_metric_keys,
+    tag_priority,
+    unit_matches_family,
+)
+from stocks.models import Company, FinancialFact, IngestionRun, RawSecPayload
+from stocks.normalization import derive_quarter_from_ytd, select_annual_fact
+from stocks.xbrl_mapping import ANNUAL_FORMS, QUARTERLY_FORMS
 
-SEC_EDGAR_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+
+SEC_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 USER_AGENT = "StockPulse hitesh07082002@gmail.com"
-REQUEST_INTERVAL = 0.1  # 10 req/sec
+REQUEST_INTERVAL = 0.1
 MAX_RETRIES = 3
-INITIAL_BACKOFF = 1  # seconds
+INITIAL_BACKOFF = 1
 COOLDOWN_DAYS = 7
 
-# Map fiscal-period codes from SEC to quarter integers.
 FP_QUARTER_MAP = {
     "Q1": 1,
     "Q2": 2,
@@ -35,11 +46,13 @@ FP_QUARTER_MAP = {
 
 
 class Command(BaseCommand):
-    help = "Ingest SEC EDGAR XBRL company facts into FinancialFact rows."
+    help = "Fetch SEC EDGAR company facts and rebuild canonical FinancialFact rows."
 
-    # ------------------------------------------------------------------
-    # CLI arguments
-    # ------------------------------------------------------------------
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": USER_AGENT})
+
     def add_arguments(self, parser):
         parser.add_argument(
             "--ticker",
@@ -54,131 +67,151 @@ class Command(BaseCommand):
             help="Re-ingest even if a successful run exists within the last 7 days.",
         )
 
-    # ------------------------------------------------------------------
-    # Entry point
-    # ------------------------------------------------------------------
     def handle(self, *args, **options):
         ticker = options["ticker"]
         force = options["force"]
-
         companies = self._resolve_companies(ticker)
+
         self.stdout.write(
-            f"Starting ingestion for {len(companies)} company(ies) "
-            f"(force={force})."
+            f"Starting SEC ingestion for {len(companies)} company(ies) (force={force})."
         )
 
-        success_count = 0
-        fail_count = 0
-
+        summary = {"success": 0, "failed": 0, "skipped": 0}
         for company in companies:
-            ok = self._process_company(company, force=force)
-            if ok:
-                success_count += 1
-            else:
-                fail_count += 1
+            status = self._process_company(company, force=force)
+            summary[status] += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Ingestion complete. success={success_count}  failed={fail_count}"
+                "Ingestion complete. "
+                f"success={summary['success']} "
+                f"failed={summary['failed']} "
+                f"skipped={summary['skipped']}"
             )
         )
 
-    # ------------------------------------------------------------------
-    # Resolve target companies
-    # ------------------------------------------------------------------
     def _resolve_companies(self, ticker):
         if ticker:
             try:
                 return [Company.objects.get(ticker__iexact=ticker)]
-            except Company.DoesNotExist:
-                raise CommandError(f"Company with ticker '{ticker}' not found.")
-        return list(Company.objects.all())
+            except Company.DoesNotExist as exc:
+                raise CommandError(f"Company with ticker '{ticker}' not found.") from exc
+        return list(Company.objects.order_by("ticker"))
 
-    # ------------------------------------------------------------------
-    # Per-company pipeline
-    # ------------------------------------------------------------------
     def _process_company(self, company, *, force):
         self.stdout.write(f"[{company.ticker}] Processing CIK={company.cik} ...")
 
-        # 1. Cooldown check
         if not force and self._recently_ingested(company):
             self.stdout.write(
-                f"  Skipped — successful ingestion within last {COOLDOWN_DAYS} days."
+                f"  Skipped — successful SEC ingestion within last {COOLDOWN_DAYS} days."
             )
-            return True
+            return "skipped"
 
-        # 2. Create in-progress log
-        log = IngestionLog.objects.create(
+        run = IngestionRun.objects.create(
             company=company,
-            source="sec_edgar",
-            status="in_progress",
+            source=IngestionRun.SOURCE_SEC,
+            status=IngestionRun.STATUS_IN_PROGRESS,
+            details_json={},
         )
 
+        raw_companyfacts = None
+        raw_submissions = None
+
         try:
-            # 3. Fetch raw JSON
-            data = self._fetch_facts(company)
+            companyfacts_payload = self._fetch_companyfacts(company)
+            raw_companyfacts = self._record_payload(
+                company=company,
+                source=RawSecPayload.SOURCE_COMPANYFACTS,
+                status=RawSecPayload.STATUS_SUCCESS,
+                payload=companyfacts_payload,
+                retention_note="latest_success",
+            )
+            submissions_payload = self._fetch_submissions(company)
+            raw_submissions = self._record_payload(
+                company=company,
+                source=RawSecPayload.SOURCE_SUBMISSIONS,
+                status=RawSecPayload.STATUS_SUCCESS,
+                payload=submissions_payload,
+                retention_note="latest_success",
+            )
 
-            # 4. Store raw JSON on Company
-            company.raw_facts_json = data
-            company.facts_updated_at = timezone.now()
-            company.save(update_fields=["raw_facts_json", "facts_updated_at"])
+            fact_models = self._build_financial_facts(company, companyfacts_payload)
+            if not fact_models:
+                raise ValueError("No canonical financial facts were produced from the SEC payload.")
 
-            # 5. Parse & upsert
-            records = self._parse_and_upsert(company, data)
-
-            # 6. Mark success
-            log.status = "success"
-            log.records_created = records
-            log.completed_at = timezone.now()
-            log.save(update_fields=["status", "records_created", "completed_at"])
+            details = self._replace_company_facts(
+                company,
+                fact_models,
+                raw_companyfacts,
+                raw_submissions,
+            )
+            run.status = IngestionRun.STATUS_SUCCESS
+            run.details_json = details
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "details_json", "completed_at"])
 
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"  Success — {records} fact(s) upserted."
+                    f"  Success — {details['facts_replaced']} canonical fact(s) rebuilt."
                 )
             )
-            return True
+            return "success"
 
-        except Exception as exc:
-            log.status = "failed"
-            log.error_message = f"{exc}\n{traceback.format_exc()}"
-            log.completed_at = timezone.now()
-            log.save(update_fields=["status", "error_message", "completed_at"])
+        except Exception as exc:  # noqa: BLE001 - management command should report full failure context
+            if raw_companyfacts is None:
+                self._record_payload(
+                    company=company,
+                    source=RawSecPayload.SOURCE_COMPANYFACTS,
+                    status=RawSecPayload.STATUS_FAILED,
+                    payload={"error": str(exc)},
+                    retention_note="latest_failed",
+                )
+            if raw_submissions is None:
+                self._record_payload(
+                    company=company,
+                    source=RawSecPayload.SOURCE_SUBMISSIONS,
+                    status=RawSecPayload.STATUS_FAILED,
+                    payload={"error": str(exc)},
+                    retention_note="latest_failed",
+                )
 
-            self.stderr.write(
-                self.style.ERROR(f"  FAILED — {exc}")
-            )
-            return False
+            run.status = IngestionRun.STATUS_FAILED
+            run.details_json = {
+                "error": str(exc),
+                "traceback_tail": traceback.format_exc().splitlines()[-8:],
+            }
+            run.completed_at = timezone.now()
+            run.save(update_fields=["status", "details_json", "completed_at"])
 
-    # ------------------------------------------------------------------
-    # Cooldown helper
-    # ------------------------------------------------------------------
+            self.stderr.write(self.style.ERROR(f"  FAILED — {exc}"))
+            return "failed"
+
     def _recently_ingested(self, company):
         cutoff = timezone.now() - timedelta(days=COOLDOWN_DAYS)
-        return IngestionLog.objects.filter(
+        return IngestionRun.objects.filter(
             company=company,
-            source="sec_edgar",
-            status="success",
+            source=IngestionRun.SOURCE_SEC,
+            status=IngestionRun.STATUS_SUCCESS,
             started_at__gte=cutoff,
         ).exists()
 
-    # ------------------------------------------------------------------
-    # HTTP fetch with rate limiting + exponential backoff on 429
-    # ------------------------------------------------------------------
-    def _fetch_facts(self, company):
+    def _fetch_companyfacts(self, company):
         cik_padded = str(company.cik).zfill(10)
-        url = SEC_EDGAR_URL.format(cik=cik_padded)
+        url = SEC_COMPANYFACTS_URL.format(cik=cik_padded)
+        return self._fetch_sec_json(url)
 
-        session = requests.Session()
-        session.headers.update({"User-Agent": USER_AGENT})
+    def _fetch_submissions(self, company):
+        cik_padded = str(company.cik).zfill(10)
+        url = SEC_SUBMISSIONS_URL.format(cik=cik_padded)
+        return self._fetch_sec_json(url)
 
+    def _fetch_sec_json(self, url):
         backoff = INITIAL_BACKOFF
         last_exc = None
 
         for attempt in range(1, MAX_RETRIES + 1):
-            time.sleep(REQUEST_INTERVAL)  # rate limit
-
-            response = session.get(url, timeout=30)
+            time.sleep(REQUEST_INTERVAL)
+            response = self.session.get(url, timeout=30)
 
             if response.status_code == 200:
                 return response.json()
@@ -190,103 +223,671 @@ class Command(BaseCommand):
                 )
                 if attempt < MAX_RETRIES:
                     self.stdout.write(
-                        f"  Rate-limited (429). Backing off {backoff}s ..."
+                        f"  Rate limited (429). Backing off {backoff}s before retry ..."
                     )
                     time.sleep(backoff)
                     backoff *= 2
                     continue
                 raise last_exc
 
-            # Any other HTTP error — fail immediately
             response.raise_for_status()
 
-        # Should not be reached, but guard against it.
-        raise last_exc or requests.HTTPError("Max retries exhausted.")
+        raise last_exc or requests.HTTPError(f"Max retries exhausted while fetching {url}.")
 
-    # ------------------------------------------------------------------
-    # Parse JSON → upsert FinancialFact rows
-    # ------------------------------------------------------------------
-    def _parse_and_upsert(self, company, data):
-        us_gaap = data.get("facts", {}).get("us-gaap", {})
-        upsert_count = 0
+    def _record_payload(self, *, company, source, status, payload, retention_note):
+        RawSecPayload.objects.filter(
+            company=company,
+            source=source,
+            status=status,
+        ).delete()
+        return RawSecPayload.objects.create(
+            company=company,
+            source=source,
+            status=status,
+            payload_json=payload,
+            retention_note=retention_note,
+        )
 
-        for metric_name, xbrl_tags in XBRL_METRIC_MAP.items():
-            # Try each XBRL tag in priority order; first match wins.
-            tag_data = None
-            for tag in xbrl_tags:
-                tag_data = us_gaap.get(tag)
-                if tag_data is not None:
-                    break
+    def _replace_company_facts(self, company, fact_models, raw_companyfacts, raw_submissions):
+        deduped_facts, duplicate_collisions = self._dedupe_fact_models(fact_models)
 
-            if tag_data is None:
+        sorted_facts = sorted(
+            deduped_facts,
+            key=lambda fact: (
+                fact.metric_key,
+                fact.period_type,
+                fact.fiscal_year,
+                fact.fiscal_quarter or 0,
+                fact.period_end or date.min,
+            ),
+        )
+
+        metric_counts = defaultdict(int)
+        annual_count = 0
+        quarterly_count = 0
+        derived_count = 0
+
+        for fact in sorted_facts:
+            metric_counts[fact.metric_key] += 1
+            if fact.period_type == FinancialFact.PERIOD_ANNUAL:
+                annual_count += 1
+            else:
+                quarterly_count += 1
+            if fact.is_derived:
+                derived_count += 1
+
+        with transaction.atomic():
+            FinancialFact.objects.filter(company=company).delete()
+            FinancialFact.objects.bulk_create(sorted_facts)
+            company.facts_updated_at = timezone.now()
+            company.save(update_fields=["facts_updated_at"])
+
+        return {
+            "raw_payload_ids": {
+                "companyfacts": raw_companyfacts.id,
+                "submissions": raw_submissions.id,
+            },
+            "facts_replaced": len(sorted_facts),
+            "annual_facts": annual_count,
+            "quarterly_facts": quarterly_count,
+            "derived_facts": derived_count,
+            "duplicate_collisions": duplicate_collisions,
+            "metric_counts": dict(sorted(metric_counts.items())),
+        }
+
+    def _build_financial_facts(self, company, payload):
+        entries_by_metric = self._collect_metric_entries(payload)
+        fact_models = []
+
+        for metric_key in list_metric_keys():
+            definition = get_metric_definition(metric_key)
+            if definition.metric_class == "derived":
                 continue
 
-            # Entries live under units -> USD (or shares, etc.).
-            # Try USD first, then fall back to "shares" for share-count metrics.
-            entries = tag_data.get("units", {}).get("USD")
-            unit = "USD"
-            if entries is None:
-                entries = tag_data.get("units", {}).get("shares")
-                unit = "shares"
-            if entries is None:
-                # Some metrics use USD/shares; try the first available unit.
-                units_dict = tag_data.get("units", {})
-                if units_dict:
-                    unit, entries = next(iter(units_dict.items()))
-            if not entries:
+            metric_entries = entries_by_metric.get(metric_key, [])
+            if not metric_entries:
                 continue
 
-            for entry in entries:
-                form_type = entry.get("form", "")
-                if form_type in ANNUAL_FORMS:
-                    period_type = "annual"
-                elif form_type in QUARTERLY_FORMS:
-                    period_type = "quarterly"
-                else:
-                    continue  # skip forms we don't care about
-
-                fiscal_year = entry.get("fy")
+            entries_by_year = defaultdict(list)
+            for entry in metric_entries:
+                fiscal_year = entry.get("fiscal_year")
                 if fiscal_year is None:
                     continue
+                entries_by_year[fiscal_year].append(entry)
 
-                fp = entry.get("fp", "")
-                fiscal_quarter = FP_QUARTER_MAP.get(fp)
-                # FY -> None (annual summary), which is the default
+            for fiscal_year, yearly_entries in sorted(entries_by_year.items()):
+                annual_entry = self._select_annual_entry(metric_key, yearly_entries)
+                if annual_entry is not None:
+                    fact_models.append(
+                        self._build_fact_model(
+                            company,
+                            metric_key=metric_key,
+                            period_type=FinancialFact.PERIOD_ANNUAL,
+                            fiscal_year=fiscal_year,
+                            fiscal_quarter=None,
+                            selected=annual_entry,
+                        )
+                    )
 
-                end_str = entry.get("end")
-                period_end_date = None
-                if end_str:
-                    try:
-                        period_end_date = date.fromisoformat(end_str)
-                    except (ValueError, TypeError):
-                        pass
-
-                value = entry.get("val")
-                if value is None:
+                if definition.metric_class == "instant":
+                    fact_models.extend(
+                        self._build_instant_quarter_facts(
+                            company,
+                            metric_key,
+                            fiscal_year,
+                            yearly_entries,
+                            annual_entry,
+                        )
+                    )
                     continue
 
-                filed_str = entry.get("filed")
-                filed_date = None
-                if filed_str:
-                    try:
-                        filed_date = date.fromisoformat(filed_str)
-                    except (ValueError, TypeError):
-                        pass
+                fact_models.extend(
+                    self._build_duration_quarter_facts(
+                        company,
+                        metric_key,
+                        fiscal_year,
+                        yearly_entries,
+                        annual_entry,
+                        allow_q4_derivation=(definition.metric_class == "duration"),
+                    )
+                )
 
-                _, created = FinancialFact.objects.update_or_create(
+        fact_models.extend(self._derive_free_cash_flow_facts(company, fact_models))
+        return fact_models
+
+    def _collect_metric_entries(self, payload):
+        facts_by_taxonomy = payload.get("facts", {}) or {}
+        entries_by_metric = defaultdict(list)
+
+        for metric_key in list_metric_keys():
+            definition = get_metric_definition(metric_key)
+            if definition.metric_class == "derived":
+                continue
+
+            for tag in definition.preferred_tags:
+                for taxonomy in facts_by_taxonomy.values():
+                    tag_payload = (taxonomy or {}).get(tag)
+                    if not tag_payload:
+                        continue
+
+                    for unit, raw_entries in (tag_payload.get("units") or {}).items():
+                        for raw_entry in raw_entries or []:
+                            normalized = self._normalize_entry(metric_key, tag, unit, raw_entry)
+                            if normalized is not None:
+                                entries_by_metric[metric_key].append(normalized)
+
+        return entries_by_metric
+
+    def _normalize_entry(self, metric_key, tag, unit, raw_entry):
+        fiscal_year = raw_entry.get("fy")
+        value = self._to_decimal(raw_entry.get("val"))
+        if fiscal_year is None or value is None:
+            return None
+        if raw_entry.get("segment"):
+            return None
+
+        definition = get_metric_definition(metric_key)
+        if unit is None:
+            return None
+        if not unit_matches_family(unit, definition.allowed_unit_family):
+            return None
+
+        return {
+            "metric_key": metric_key,
+            "metric": metric_key,
+            "tag": tag,
+            "unit": unit,
+            "val": value,
+            "start": raw_entry.get("start"),
+            "end": raw_entry.get("end"),
+            "fy": fiscal_year,
+            "fiscal_year": fiscal_year,
+            "fp": raw_entry.get("fp"),
+            "fiscal_quarter": FP_QUARTER_MAP.get(raw_entry.get("fp")),
+            "form": raw_entry.get("form", ""),
+            "filed": raw_entry.get("filed"),
+            "frame": raw_entry.get("frame"),
+            "segment": raw_entry.get("segment"),
+        }
+
+    def _select_annual_entry(self, metric_key, entries):
+        definition = get_metric_definition(metric_key)
+        if definition.metric_class == "instant":
+            return self._select_instant_entry(
+                metric_key,
+                entries,
+                allowed_forms=ANNUAL_FORMS,
+                selection_reason="selected_annual_instant_fact",
+            )
+
+        return select_annual_fact(entries, metric_key=metric_key)
+
+    def _build_instant_quarter_facts(
+        self,
+        company,
+        metric_key,
+        fiscal_year,
+        entries,
+        annual_entry,
+    ):
+        facts = []
+        for quarter in (1, 2, 3):
+            selected = self._select_instant_entry(
+                metric_key,
+                entries,
+                allowed_forms=QUARTERLY_FORMS,
+                target_quarter=quarter,
+                selection_reason="selected_quarterly_instant_fact",
+            )
+            if selected is None:
+                continue
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=quarter,
+                    selected=selected,
+                )
+            )
+
+        if annual_entry is not None:
+            quarter_four_entry = {
+                **annual_entry,
+                "selection_reason": "selected_quarterly_instant_year_end",
+            }
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=4,
+                    selected=quarter_four_entry,
+                )
+            )
+
+        return facts
+
+    def _build_duration_quarter_facts(
+        self,
+        company,
+        metric_key,
+        fiscal_year,
+        entries,
+        annual_entry,
+        *,
+        allow_q4_derivation,
+    ):
+        facts = []
+
+        q1 = self._select_duration_entry(
+            metric_key,
+            entries,
+            target_quarter=1,
+            min_days=75,
+            max_days=110,
+            ideal_days=91,
+            selection_reason="selected_quarterly_fact",
+        )
+        if q1 is not None:
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=1,
+                    selected=q1,
+                )
+            )
+
+        q2 = self._select_or_derive_quarter(metric_key, entries, quarter=2, previous_ytd=q1)
+        if q2 is not None:
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=2,
+                    selected=q2,
+                )
+            )
+
+        q2_ytd = self._select_duration_entry(
+            metric_key,
+            entries,
+            target_quarter=2,
+            min_days=160,
+            max_days=210,
+            ideal_days=182,
+            selection_reason="selected_quarterly_ytd_anchor",
+        )
+        q3 = self._select_or_derive_quarter(metric_key, entries, quarter=3, previous_ytd=q2_ytd)
+        if q3 is not None:
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=3,
+                    selected=q3,
+                )
+            )
+
+        explicit_q4 = self._select_duration_entry(
+            metric_key,
+            entries,
+            target_quarter=4,
+            min_days=75,
+            max_days=110,
+            ideal_days=91,
+            selection_reason="selected_quarterly_fact",
+            allowed_forms=ANNUAL_FORMS | QUARTERLY_FORMS,
+        )
+        if explicit_q4 is not None:
+            facts.append(
+                self._build_fact_model(
+                    company,
+                    metric_key=metric_key,
+                    period_type=FinancialFact.PERIOD_QUARTERLY,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=4,
+                    selected=explicit_q4,
+                )
+            )
+        elif allow_q4_derivation and annual_entry is not None and q1 and q2 and q3:
+            q4 = self._derive_q4_from_annual(metric_key, annual_entry, q1, q2, q3)
+            if q4 is not None:
+                facts.append(
+                    self._build_fact_model(
+                        company,
+                        metric_key=metric_key,
+                        period_type=FinancialFact.PERIOD_QUARTERLY,
+                        fiscal_year=fiscal_year,
+                        fiscal_quarter=4,
+                        selected=q4,
+                    )
+                )
+
+        return facts
+
+    def _select_or_derive_quarter(self, metric_key, entries, *, quarter, previous_ytd):
+        explicit = self._select_duration_entry(
+            metric_key,
+            entries,
+            target_quarter=quarter,
+            min_days=75,
+            max_days=110,
+            ideal_days=91,
+            selection_reason="selected_quarterly_fact",
+        )
+        if explicit is not None:
+            return explicit
+
+        ytd_bounds = {
+            2: (160, 210, 182),
+            3: (250, 310, 273),
+        }
+        min_days, max_days, ideal_days = ytd_bounds[quarter]
+        current_ytd = self._select_duration_entry(
+            metric_key,
+            entries,
+            target_quarter=quarter,
+            min_days=min_days,
+            max_days=max_days,
+            ideal_days=ideal_days,
+            selection_reason="selected_quarterly_ytd_anchor",
+        )
+        if previous_ytd is None or current_ytd is None:
+            return None
+
+        derived = derive_quarter_from_ytd(previous_ytd, current_ytd)
+        if derived is None:
+            return None
+
+        previous_end = self._parse_iso_date(previous_ytd.get("end"))
+        current_end = self._parse_iso_date(current_ytd.get("end"))
+        if current_end is None:
+            return None
+
+        return {
+            **derived,
+            "val": derived.get("value"),
+            "start": (previous_end + timedelta(days=1)).isoformat() if previous_end else None,
+            "end": current_end.isoformat(),
+            "filed": current_ytd.get("filed"),
+        }
+
+    def _derive_q4_from_annual(self, metric_key, annual_entry, q1, q2, q3):
+        annual_value = self._to_decimal(annual_entry.get("val"))
+        if annual_value is None:
+            return None
+
+        quarter_values = [self._to_decimal(entry.get("val")) for entry in (q1, q2, q3)]
+        if any(value is None for value in quarter_values):
+            return None
+
+        q3_end = self._parse_iso_date(q3.get("end"))
+        annual_end = self._parse_iso_date(annual_entry.get("end"))
+        if annual_end is None:
+            return None
+
+        return {
+            "metric_key": metric_key,
+            "metric": metric_key,
+            "fiscal_year": annual_entry.get("fiscal_year"),
+            "fiscal_quarter": 4,
+            "val": annual_value - sum(quarter_values, Decimal("0")),
+            "unit": annual_entry.get("unit"),
+            "source_tag": annual_entry.get("source_tag", annual_entry.get("tag", "")),
+            "source_form": annual_entry.get("source_form", annual_entry.get("form", "")),
+            "filed": annual_entry.get("filed"),
+            "is_amended": annual_entry.get("is_amended", False),
+            "is_derived": True,
+            "selection_reason": "derived_q4_from_annual",
+            "start": (q3_end + timedelta(days=1)).isoformat() if q3_end else None,
+            "end": annual_end.isoformat(),
+        }
+
+    def _select_duration_entry(
+        self,
+        metric_key,
+        entries,
+        *,
+        target_quarter,
+        min_days,
+        max_days,
+        ideal_days,
+        selection_reason,
+        allowed_forms=QUARTERLY_FORMS,
+    ):
+        candidates = []
+        for entry in entries:
+            if entry.get("form") not in allowed_forms:
+                continue
+            if entry.get("fiscal_quarter") != target_quarter:
+                continue
+
+            duration_days = self._duration_days(entry)
+            if duration_days is None or duration_days < min_days or duration_days > max_days:
+                continue
+
+            filed_ordinal = self._date_ordinal(entry.get("filed"))
+            candidates.append(
+                (
+                    (
+                        abs(duration_days - ideal_days),
+                        -filed_ordinal,
+                        tag_priority(metric_key, entry.get("tag", "")),
+                        entry.get("tag", ""),
+                        entry.get("form", ""),
+                        entry.get("end", ""),
+                        entry.get("start", ""),
+                    ),
+                    entry,
+                )
+            )
+
+        if not candidates:
+            return None
+
+        _, selected = min(candidates, key=lambda candidate: candidate[0])
+        return {
+            **selected,
+            "source_tag": selected.get("tag", ""),
+            "source_form": selected.get("form", ""),
+            "is_amended": self._is_amended(selected.get("form", "")),
+            "selection_reason": selection_reason,
+        }
+
+    def _select_instant_entry(
+        self,
+        metric_key,
+        entries,
+        *,
+        allowed_forms,
+        selection_reason,
+        target_quarter=None,
+    ):
+        candidates = []
+        for entry in entries:
+            if entry.get("form") not in allowed_forms:
+                continue
+            if target_quarter is not None and entry.get("fiscal_quarter") != target_quarter:
+                continue
+
+            period_end = self._parse_iso_date(entry.get("end"))
+            if period_end is None:
+                continue
+
+            filed_ordinal = self._date_ordinal(entry.get("filed"))
+            candidates.append(
+                (
+                    (
+                        -period_end.toordinal(),
+                        -filed_ordinal,
+                        tag_priority(metric_key, entry.get("tag", "")),
+                        entry.get("tag", ""),
+                        entry.get("form", ""),
+                        entry.get("end", ""),
+                    ),
+                    entry,
+                )
+            )
+
+        if not candidates:
+            return None
+
+        _, selected = min(candidates, key=lambda candidate: candidate[0])
+        return {
+            **selected,
+            "source_tag": selected.get("tag", ""),
+            "source_form": selected.get("form", ""),
+            "is_amended": self._is_amended(selected.get("form", "")),
+            "selection_reason": selection_reason,
+        }
+
+    def _derive_free_cash_flow_facts(self, company, fact_models):
+        facts_by_period = {}
+        for fact in fact_models:
+            period_key = (
+                fact.period_type,
+                fact.fiscal_year,
+                fact.fiscal_quarter,
+                fact.period_end,
+            )
+            facts_by_period.setdefault(period_key, {})[fact.metric_key] = fact
+
+        derived = []
+        for (period_type, fiscal_year, fiscal_quarter, period_end), facts in facts_by_period.items():
+            operating_cash_flow = facts.get("operating_cash_flow")
+            capital_expenditures = facts.get("capital_expenditures")
+            if operating_cash_flow is None or capital_expenditures is None:
+                continue
+
+            derived.append(
+                FinancialFact(
                     company=company,
-                    metric=metric_name,
+                    metric_key="free_cash_flow",
                     period_type=period_type,
                     fiscal_year=fiscal_year,
                     fiscal_quarter=fiscal_quarter,
-                    defaults={
-                        "period_end_date": period_end_date,
-                        "value": value,
-                        "unit": unit,
-                        "form_type": form_type,
-                        "filed_date": filed_date,
-                    },
+                    period_start=operating_cash_flow.period_start,
+                    period_end=period_end,
+                    value=operating_cash_flow.value - abs(capital_expenditures.value),
+                    unit=operating_cash_flow.unit,
+                    source_tag=operating_cash_flow.source_tag,
+                    source_form=operating_cash_flow.source_form,
+                    filed_date=operating_cash_flow.filed_date,
+                    is_amended=operating_cash_flow.is_amended or capital_expenditures.is_amended,
+                    is_derived=True,
+                    selection_reason="derived_from_operating_cash_flow_and_capex",
                 )
-                upsert_count += 1
+            )
 
-        return upsert_count
+        return derived
+
+    def _build_fact_model(
+        self,
+        company,
+        *,
+        metric_key,
+        period_type,
+        fiscal_year,
+        fiscal_quarter,
+        selected,
+    ):
+        return FinancialFact(
+            company=company,
+            metric_key=metric_key,
+            period_type=period_type,
+            fiscal_year=fiscal_year,
+            fiscal_quarter=fiscal_quarter,
+            period_start=self._parse_iso_date(selected.get("start")),
+            period_end=self._parse_iso_date(selected.get("end")),
+            value=self._to_decimal(selected.get("val", selected.get("value"))),
+            unit=selected.get("unit", ""),
+            source_tag=selected.get("source_tag", selected.get("tag", "")),
+            source_form=selected.get("source_form", selected.get("form", "")),
+            filed_date=self._parse_iso_date(selected.get("filed")),
+            is_amended=bool(selected.get("is_amended")),
+            is_derived=bool(selected.get("is_derived")),
+            selection_reason=selected.get("selection_reason", ""),
+        )
+
+    def _dedupe_fact_models(self, fact_models):
+        canonical = {}
+        duplicate_collisions = 0
+
+        for fact in fact_models:
+            key = (
+                fact.metric_key,
+                fact.period_type,
+                fact.fiscal_year,
+                fact.period_end,
+            )
+            current = canonical.get(key)
+            if current is None:
+                canonical[key] = fact
+                continue
+
+            duplicate_collisions += 1
+            if self._fact_preference_key(fact) < self._fact_preference_key(current):
+                canonical[key] = fact
+
+        return list(canonical.values()), duplicate_collisions
+
+    def _fact_preference_key(self, fact):
+        source_rank = 0
+        if fact.period_type == FinancialFact.PERIOD_QUARTERLY:
+            if fact.source_form in QUARTERLY_FORMS:
+                source_rank = 0
+            elif fact.source_form in ANNUAL_FORMS:
+                source_rank = 1
+            else:
+                source_rank = 2
+
+        filed_ordinal = fact.filed_date.toordinal() if fact.filed_date else 0
+
+        return (
+            0 if not fact.is_derived else 1,
+            source_rank,
+            fact.fiscal_quarter or 99,
+            -filed_ordinal,
+            fact.source_tag,
+            fact.selection_reason,
+        )
+
+    def _duration_days(self, entry):
+        period_start = self._parse_iso_date(entry.get("start"))
+        period_end = self._parse_iso_date(entry.get("end"))
+        if period_start is None or period_end is None:
+            return None
+        return (period_end - period_start).days + 1
+
+    def _date_ordinal(self, value):
+        parsed = self._parse_iso_date(value)
+        return parsed.toordinal() if parsed else 0
+
+    def _parse_iso_date(self, value):
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _to_decimal(self, value):
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
+    def _is_amended(self, form_type):
+        return str(form_type or "").endswith("/A") or str(form_type or "").endswith("-A")

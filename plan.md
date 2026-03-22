@@ -510,6 +510,10 @@ The current implementation on `main` is not the foundation of the rewrite, but i
 
 **Status:** IN_PROGRESS
 
+Current checkpoint:
+- the 25-company local development set has been rebuilt from the canonical pipeline with live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows
+- remaining M2 work is expanding from the dev seed set to the full S&P 500 and recording the launch coverage audit at the locked threshold
+
 Locked execution decisions:
 - hard-cut to the final canonical schema now; do not extend the legacy model shape
 - treat local and dev data as disposable; reset and rebuild after the schema cut
@@ -535,9 +539,9 @@ Implementation order:
 **Dimensions:**
 - 8.2.1 DONE Hard-cut to the final canonical schema: `FinancialFact`, `MetricSnapshot`, `RawSecPayload`, `IngestionRun`, and `PriceCache`
 - 8.2.2 DONE Build the metric registry and prove deterministic normalization with fixture-based tests for amended filings, mixed units, and derived quarters
-- 8.2.3 PENDING Persist bounded raw SEC payloads in `RawSecPayload`, rebuild `ingest_companies`, and rebuild `ingest_financials` against the canonical schema
-- 8.2.4 PENDING Replace legacy `compute_metrics` with `compute_snapshots` on top of canonical facts only
-- 8.2.5 PENDING Reset local/dev data after the schema cut, rebuild from the new pipeline, expand from the 25-company seed set to full S&P 500 coverage, and record the launch coverage audit at `95%+` launch-critical metric coverage
+- 8.2.3 DONE Persist bounded raw SEC payloads in `RawSecPayload`, rebuild `ingest_companies`, and rebuild `ingest_financials` against the canonical schema
+- 8.2.4 DONE Replace legacy `compute_metrics` with `compute_snapshots` on top of canonical facts only
+- 8.2.5 PENDING Expand from the rebuilt 25-company development seed set to full S&P 500 coverage and record the launch coverage audit at `95%+` launch-critical metric coverage
 
 ### 8.3 M3 — Public Read APIs and Stock Detail Shell
 

@@ -1,10 +1,10 @@
-import yfinance as yf
 from decimal import Decimal, InvalidOperation
 
+import yfinance as yf
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from stocks.models import Company, IngestionLog
+from stocks.models import Company, IngestionRun
 
 
 class Command(BaseCommand):
@@ -24,10 +24,12 @@ class Command(BaseCommand):
         if ticker_filter:
             companies = Company.objects.filter(ticker__iexact=ticker_filter)
             if not companies.exists():
-                self.stderr.write(self.style.ERROR(f"No company found with ticker '{ticker_filter}'"))
+                self.stderr.write(
+                    self.style.ERROR(f"No company found with ticker '{ticker_filter}'")
+                )
                 return
         else:
-            companies = Company.objects.all()
+            companies = Company.objects.order_by("ticker")
 
         total = companies.count()
         updated = 0
@@ -36,10 +38,11 @@ class Command(BaseCommand):
         self.stdout.write(f"Updating prices for {total} company(ies)...\n")
 
         for company in companies:
-            log = IngestionLog.objects.create(
+            run = IngestionRun.objects.create(
                 company=company,
-                source="yfinance",
-                status="in_progress",
+                source=IngestionRun.SOURCE_PRICES,
+                status=IngestionRun.STATUS_IN_PROGRESS,
+                details_json={},
             )
 
             try:
@@ -54,36 +57,40 @@ class Command(BaseCommand):
                 company.week_52_high = _to_decimal(info.get("fiftyTwoWeekHigh"))
                 company.week_52_low = _to_decimal(info.get("fiftyTwoWeekLow"))
                 company.shares_outstanding = info.get("sharesOutstanding")
-                company.price_updated_at = timezone.now()
-                company.save(update_fields=[
-                    "current_price",
-                    "market_cap",
-                    "week_52_high",
-                    "week_52_low",
-                    "shares_outstanding",
-                    "price_updated_at",
-                ])
+                company.quote_updated_at = timezone.now()
+                company.save(
+                    update_fields=[
+                        "current_price",
+                        "market_cap",
+                        "week_52_high",
+                        "week_52_low",
+                        "shares_outstanding",
+                        "quote_updated_at",
+                    ]
+                )
 
-                log.status = "success"
-                log.records_created = 1
-                log.completed_at = timezone.now()
-                log.save(update_fields=["status", "records_created", "completed_at"])
+                run.status = IngestionRun.STATUS_SUCCESS
+                run.details_json = {"records_updated": 1}
+                run.completed_at = timezone.now()
+                run.save(update_fields=["status", "details_json", "completed_at"])
 
                 updated += 1
                 self.stdout.write(f"  OK  {company.ticker} — ${company.current_price}")
 
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - command should report ticker-level failures
                 failed += 1
 
-                log.status = "failed"
-                log.error_message = str(exc)[:1000]
-                log.completed_at = timezone.now()
-                log.save(update_fields=["status", "error_message", "completed_at"])
+                run.status = IngestionRun.STATUS_FAILED
+                run.details_json = {"error": str(exc)[:1000]}
+                run.completed_at = timezone.now()
+                run.save(update_fields=["status", "details_json", "completed_at"])
 
                 self.stderr.write(self.style.WARNING(f"  FAIL {company.ticker} — {exc}"))
 
         self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS(f"Done. {updated} updated, {failed} failed (of {total})."))
+        self.stdout.write(
+            self.style.SUCCESS(f"Done. {updated} updated, {failed} failed (of {total}).")
+        )
 
 
 def _to_decimal(value):

@@ -100,9 +100,10 @@ Latest verification pass:
 
 Next up:
 - M2 ingestion and canonical data is now in progress
-- the schema cut, metric registry, and fixture-proven normalization are now in place
-- local SQLite dev data was reset and re-seeded with the 25-company development set
-- next M2 work is raw SEC payload retention, canonical `ingest_financials`, and `compute_snapshots`
+- the schema cut, metric registry, canonical `ingest_financials`, and `compute_snapshots` are now in place
+- local SQLite dev data was reset and rebuilt from the real pipeline for the 25-company development set
+- the local dev dataset now includes live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows for every seeded company
+- next M2 work is expanding beyond the 25-company dev set to the full S&P 500 and recording the launch coverage audit
 
 ## Local Development
 
