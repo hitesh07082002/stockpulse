@@ -237,7 +237,7 @@ function ValuationTab({ ticker }) {
             </div>
             <div>
               <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Growth Default
+                Suggested Growth
               </div>
               <div className="font-data text-2xl text-text-primary">
                 {formatPercent(modeData.growth_rate_default).replace('+', '')}
@@ -260,7 +260,7 @@ function ValuationTab({ ticker }) {
               <AssumptionField
                 label="Growth Rate"
                 suffix="%"
-                helper="Expected annual growth for the selected mode."
+                helper="Prefilled from recent company data and bounded to a sober five-year starting assumption."
                 value={growthRate}
                 onChange={(value) => updateModeDraft('growthRate', value)}
               />

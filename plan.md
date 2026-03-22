@@ -109,8 +109,8 @@ The primary user journey is simple and fast:
 - 3.3.3 DONE Authenticated users get 50 prompts per day per account.
 - 3.3.4 DONE A hard global daily budget cap, configured by env var, protects spend if usage spikes.
 - 3.3.5 DONE After the anonymous quota is exhausted, the UI offers sign-in for the 50-prompt authenticated allowance that day.
-- 3.3.6 DONE Anonymous AI identity is issued as a signed `anon_ai_id` cookie on first copilot use, rotates every 30 days, and is reissued if missing or invalid.
-- 3.3.7 DONE A short-window burst limit of 3 prompts per minute per IP applies alongside the daily quotas.
+- 3.3.6 DONE Anonymous AI identity is issued as a signed `anon_ai_id` cookie on first copilot use, rotates every 30 days, and is reissued if missing or invalid. Anonymous daily quota enforcement is best-effort: clearing cookies resets the identity. The per-minute IP backstop limits abuse velocity but does not enforce a hard daily cap on anonymous users.
+- 3.3.7 DONE A short-window burst limit of 3 prompts per minute per IP applies alongside the daily quotas. This is enforced via middleware rate limiting (e.g. `django-ratelimit`), not via `AIUsageCounter`.
 - 3.3.8 DONE Global AI spend is enforced through database-backed daily budget accounting, not by checking an external dashboard.
 - 3.3.9 DONE When the daily cap is hit, new AI requests are rejected immediately with a clear over-budget product state until the next daily window.
 
@@ -146,6 +146,7 @@ The primary user journey is simple and fast:
 - 3.6.5 DONE `Cash Flow` mode centers on free-cash-flow-per-share inputs and a projected cash-flow multiple outcome.
 - 3.6.6 DONE The primary valuation visual is a 5-year projection chart with summary result cards above it.
 - 3.6.7 DONE Sensitivity heatmaps, spreadsheet-grade scenario trees, saved models, and advanced dilution modeling are out of V1.
+- 3.6.8 DONE Valuation guardrails: disable DCF for GICS financial-sector companies (banks, insurers, exchanges) with an explanatory "Valuation not applicable" state. Warn on negative trailing earnings or negative trailing FCF. Require `shares_outstanding` to be non-null before enabling Cash Flow mode. Missing or nonsensical inputs produce a clear data-quality warning, not a garbage calculation.
 
 ---
 
@@ -395,7 +396,7 @@ The AI copilot only sees structured StockPulse data.
 - 6.3.4 DONE SSE streaming is part of V1 because it materially improves perceived speed
 - 6.3.5 DONE AI access policy checks anonymous or authenticated quota before model invocation
 - 6.3.6 DONE Anonymous requests are identified by a signed `anon_ai_id` cookie and still respect the per-minute IP burst limit
-- 6.3.7 DONE Each copilot request reserves budget before model invocation and reconciles actual spend after completion
+- 6.3.7 DONE Each copilot request reserves budget before model invocation and reconciles actual spend after completion. Budget reservation must be atomic — use a single `UPDATE ... WHERE reserved_cost_usd + new_cost <= cap` query or `SELECT FOR UPDATE` to prevent concurrent requests from exceeding the daily cap.
 - 6.3.8 DONE If the hard daily budget cap is already exhausted, the request is denied before any model call is attempted
 - 6.3.9 DONE Daily quota and budget accounting use the `America/New_York` calendar day, not the requester's local timezone
 
@@ -413,6 +414,7 @@ Authentication is part of V1, but it stays narrow and boring.
 - 6.4.5 DONE Authentication exists to support higher AI limits and future user-owned features without gating browsing
 - 6.4.6 DONE The refresh endpoint reads the refresh cookie server-side; the frontend never stores or posts a refresh token body
 - 6.4.7 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
+- 6.4.8 DONE Account linking policy: if a Google sign-in email matches an existing email/password account, the social account is auto-linked to the existing user via `django-allauth` email authentication. No duplicate accounts are created for the same verified email.
 
 ---
 
@@ -508,11 +510,14 @@ The current implementation on `main` is not the foundation of the rewrite, but i
 
 ### 8.2 M2 — Ingestion and Canonical Data
 
-**Status:** IN_PROGRESS
+**Status:** DONE
 
 Current checkpoint:
-- the 25-company local development set has been rebuilt from the canonical pipeline with live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows
-- remaining M2 work is expanding from the dev seed set to the full S&P 500 and recording the launch coverage audit at the locked threshold
+- the local database has been rebuilt from the canonical pipeline for the full 500-company universe, using company-level dedupe by unique CIK
+- the canonical pipeline now has live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows for all 500 companies
+- canonical facts can be replayed from retained `RawSecPayload` rows with `ingest_financials --from-cache --force`, so full-universe rebuilds no longer depend on live SEC availability
+- the launch coverage audit artifact exists at `docs/audits/sp500-launch-coverage-2026-03-22.md` and now passes the `95%+` gate
+- `gross_profit` and `gross_margin` are audited conditionally, only for issuers whose retained SEC payloads expose a comparable gross-profit or cost-of-revenue concept
 
 Locked execution decisions:
 - hard-cut to the final canonical schema now; do not extend the legacy model shape
@@ -541,7 +546,8 @@ Implementation order:
 - 8.2.2 DONE Build the metric registry and prove deterministic normalization with fixture-based tests for amended filings, mixed units, and derived quarters
 - 8.2.3 DONE Persist bounded raw SEC payloads in `RawSecPayload`, rebuild `ingest_companies`, and rebuild `ingest_financials` against the canonical schema
 - 8.2.4 DONE Replace legacy `compute_metrics` with `compute_snapshots` on top of canonical facts only
-- 8.2.5 PENDING Expand from the rebuilt 25-company development seed set to full S&P 500 coverage and record the launch coverage audit at `95%+` launch-critical metric coverage
+- 8.2.5 DONE Expand from the rebuilt 25-company development seed set to full S&P 500 coverage and record the launch coverage audit at `95%+` launch-critical metric coverage; the full-universe rebuild, cached replay path, and passing audit artifact are landed
+- 8.2.6 DONE M2 includes basic quote refresh (`refresh_prices`) that populates `Company` quote fields (`current_price`, `market_cap`, `quote_updated_at`, etc.) and feeds `MetricSnapshot` computation. This is sufficient for the M3 company header. The full `PriceCache` range system (range-keyed blobs, TTLs, stale fallback, downsampling) is built in M4.
 
 ### 8.3 M3 — Public Read APIs and Stock Detail Shell
 
@@ -552,6 +558,7 @@ Implementation order:
 - 8.3.2 PENDING Build landing page search and stock detail app shell
 - 8.3.3 PENDING Build overview and financial tabs against canonical data
 - 8.3.4 PENDING Ship loading, empty, error, and no-data states with the first usable slice
+- 8.3.5 PENDING Required tests: API endpoint tests for company list/detail/financials (happy path, 404, empty result, pagination boundary), frontend unit tests for serializer output shape and loading/empty/error states, Playwright smoke for landing -> search -> stock detail
 
 ### 8.4 M4 — Price, Valuation, and Screener
 
@@ -562,6 +569,7 @@ Implementation order:
 - 8.4.2 PENDING Build Price tab with stale fallback
 - 8.4.3 PENDING Build valuation inputs and a Qualtrim-style DCF calculator
 - 8.4.4 PENDING Build the focused V1 screener on top of `MetricSnapshot`
+- 8.4.5 PENDING Required tests: API endpoint tests for prices (each range + stale fallback), valuation-inputs, screener (filters + sort + empty); unit tests for valuation guardrails (financial-sector disable, negative earnings, negative FCF, missing shares_outstanding); Playwright smoke for price tab range selector and screener filter-to-company flow
 
 ### 8.5 M5 — Authentication
 
@@ -571,6 +579,7 @@ Implementation order:
 - 8.5.1 PENDING Build auth endpoints, secure cookie flow, and auth context on the frontend
 - 8.5.2 PENDING Build a Google-first auth modal with email/password fallback
 - 8.5.3 PENDING Add auth tests for registration, login, refresh, logout, and backend-managed Google callback flow
+- 8.5.4 PENDING Required tests: API tests for register, login, refresh, logout, Google callback (new user + existing email auto-link); unit test for account auto-link by verified email; Playwright smoke for auth modal flow and Google sign-in end to end
 
 ### 8.6 M6 — AI Copilot
 
@@ -581,6 +590,7 @@ Implementation order:
 - 8.6.2 PENDING Add signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, and daily spend enforcement via `AIBudgetDay`
 - 8.6.3 PENDING Add SSE streaming UI and error states
 - 8.6.4 PENDING Add prompt and response tests for groundedness and sparse-data honesty
+- 8.6.5 PENDING Required tests: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
 
 ### 8.7 M7 — Hardening and Deploy
 
@@ -592,6 +602,7 @@ Implementation order:
 - 8.7.3 PENDING Complete accessibility, responsive, and performance polish
 - 8.7.4 PENDING Update README with setup, architecture, and screenshots
 - 8.7.5 PENDING Add staging auto-deploy, production manual promotion, automated migrations, post-deploy smoke checks, and documented rollback steps
+- 8.7.6 PENDING Required tests: operational timing verification for scheduled worker SLAs, post-deploy smoke for staging and production, health check endpoint tests
 
 ---
 
@@ -599,20 +610,47 @@ Implementation order:
 
 **Status:** PENDING
 
-No milestone is complete without passing its verification gate.
+No milestone is complete without passing its verification gate. Gates are cumulative: each milestone inherits all gates from prior milestones.
 
-**Dimensions:**
-- 9.1 PENDING `make lint` passes
-- 9.2 PENDING `make test` passes
-- 9.3 PENDING `make build` passes
-- 9.4 PENDING Playwright smoke flow passes: landing -> search -> stock detail -> AI prompt submit
-- 9.5 PENDING Auth flow smoke coverage passes for register/login/logout
-- 9.6 PENDING Normalization fixtures prove deterministic handling of duplicates, amendments, mixed units, and derived quarters
-- 9.7 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
-- 9.8 PENDING Google sign-in smoke coverage passes end to end
-- 9.9 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
-- 9.10 PENDING Required GitHub Actions checks pass on pull requests and protected-branch rules keep `main` merge-safe
-- 9.11 PENDING Staging and production deployment workflows prove build-once/promote-forward behavior with post-deploy health verification
+### 9.1 M1–M2 Gates (Foundation + Ingestion)
+
+- 9.1.1 DONE `make lint` passes
+- 9.1.2 DONE `make test` passes
+- 9.1.3 DONE `make build` passes
+- 9.1.4 DONE Normalization fixtures prove deterministic handling of duplicates, amendments, mixed units, and derived quarters
+- 9.1.5 DONE Launch coverage audit passes 95%+ gate
+- 9.1.6 DONE Required GitHub Actions checks pass on pull requests
+
+### 9.2 M3 Gates (Public Read APIs + Stock Detail Shell)
+
+- 9.2.1 PENDING Playwright smoke: landing -> search -> stock detail -> Financials tab renders canonical data
+- 9.2.2 PENDING API endpoint tests: company list/detail/financials (happy path, 404, empty, pagination)
+- 9.2.3 PENDING Frontend unit tests: serializer output shape, loading/empty/error states
+
+### 9.3 M4 Gates (Price, Valuation, Screener)
+
+- 9.3.1 PENDING API endpoint tests: prices (each range + stale), valuation-inputs, screener (filters + sort + empty)
+- 9.3.2 PENDING Valuation guardrail tests: financial-sector disable, negative earnings warning, negative FCF warning, missing shares_outstanding
+- 9.3.3 PENDING Playwright smoke: price tab range selector, screener filter-to-company flow
+
+### 9.4 M5 Gates (Authentication)
+
+- 9.4.1 PENDING Auth API tests: register, login, refresh, logout, Google callback (new user, existing email auto-link)
+- 9.4.2 PENDING Auth flow smoke: register/login/logout end to end
+- 9.4.3 PENDING Google sign-in smoke coverage passes end to end
+
+### 9.5 M6 Gates (AI Copilot)
+
+- 9.5.1 PENDING Quota enforcement tests: anonymous quota, authenticated quota, burst limit, budget exhaustion
+- 9.5.2 PENDING Context assembly tests: correct data included, sparse-data honesty
+- 9.5.3 PENDING Playwright smoke: AI tab prompt submit with SSE streaming
+- 9.5.4 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
+
+### 9.6 M7 Gates (Hardening + Deploy)
+
+- 9.6.1 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
+- 9.6.2 PENDING Staging and production deployment workflows prove build-once/promote-forward behavior with post-deploy health verification
+- 9.6.3 PENDING Protected-branch rules keep `main` merge-safe
 
 ---
 
@@ -629,7 +667,8 @@ No milestone is complete without passing its verification gate.
 - [ ] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
 - [ ] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
 - [ ] 10.9 The repo has green lint, test, build, and smoke gates
-- [ ] 10.10 A documented S&P 500 coverage audit exists before launch, shows at least 95% coverage for the full launch-critical metric set, and calls out known gaps explicitly
+- [ ] 10.10 A documented S&P 500 coverage audit exists before launch, shows at least 95% coverage for the full launch-critical metric set, and calls out known gaps explicitly.
+Current status: the audit artifact at `docs/audits/sp500-launch-coverage-2026-03-22.md` passes the gate. `gross_profit` and `gross_margin` are evaluated only where retained SEC payloads expose a comparable gross-profit or cost-of-revenue concept.
 - [ ] 10.11 The scheduled-worker job model meets the documented V1 timing SLAs, or the plan is explicitly revised before launch
 - [ ] 10.12 Google sign-in and anonymous-to-authenticated AI upgrade flows are explicitly covered by launch smoke tests
 - [ ] 10.13 CI protects `main` with required backend, frontend, and smoke checks
@@ -649,7 +688,7 @@ Launch-critical metric set for 10.10:
 - operating_margin
 - net_margin
 
-For 10.10, derived metrics in the launch-critical set count as covered only when their required canonical inputs exist and the derived result is non-`NULL`.
+For 10.10, derived metrics in the launch-critical set count as covered only when their required canonical inputs exist and the derived result is non-`NULL`. `gross_profit` and `gross_margin` are conditional launch metrics rather than universal ones.
 
 ---
 
@@ -661,3 +700,18 @@ For 10.10, derived metrics in the launch-critical set count as covered only when
 - Portfolio tracking and watchlists
 - News, earnings, and macro overlays
 - Cross-company RAG or vector search
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| Adversarial | `/codex review` | Independent 2nd opinion | 0 | — | — |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 6 issues, 0 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+
+- **CODEX (plan review):** 5 P0 + 4 P1 + 1 P2 findings. Key issues addressed: verification gate structure, quote dependency contradiction, AI budget race condition, valuation guardrails, auth account linking.
+- **UNRESOLVED:** 0
+- **VERDICT:** ENG CLEARED — ready to implement. CEO and Design reviews not yet run.

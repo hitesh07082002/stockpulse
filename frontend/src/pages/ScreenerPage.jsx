@@ -81,7 +81,7 @@ function formatPercent(value) {
   if (value == null) return '--';
   const num = Number(value);
   if (Number.isNaN(num)) return '--';
-  return `${num.toFixed(2)}%`;
+  return `${(num * 100).toFixed(2)}%`;
 }
 
 function formatPrice(value) {

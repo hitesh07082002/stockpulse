@@ -107,63 +107,84 @@ function processFinancialData(rawData) {
 
   for (const row of rawData) {
     const metric = row.metric_key;
-    const period = row.fiscal_year || row.fiscal_period || row.period;
     const value = row.value != null ? Number(row.value) : null;
+    const fiscalYear = row.fiscal_year ?? null;
+    const fiscalQuarter = row.fiscal_quarter ?? null;
+    const isQuarterly = row.period_type === 'quarterly';
+    const periodKey = isQuarterly
+      ? `${fiscalYear}-Q${fiscalQuarter}`
+      : String(fiscalYear ?? row.fiscal_period ?? row.period);
+    const label = isQuarterly
+      ? `${fiscalYear} Q${fiscalQuarter}`
+      : String(fiscalYear ?? row.fiscal_period ?? row.period);
+    const sortValue = isQuarterly
+      ? ((fiscalYear ?? 0) * 10) + (fiscalQuarter ?? 0)
+      : (fiscalYear ?? 0) * 10;
 
     if (!grouped[metric]) grouped[metric] = {};
-    grouped[metric][period] = value;
+    grouped[metric][periodKey] = {
+      value,
+      label,
+      sortValue,
+    };
   }
 
   return grouped;
 }
 
 function buildChartData(grouped, metric, periodType) {
-  // Get all periods from all metrics so we have a full timeline
-  const allPeriods = new Set();
+  const allPeriods = new Map();
   for (const m of Object.keys(grouped)) {
-    for (const p of Object.keys(grouped[m])) {
-      allPeriods.add(p);
+    for (const [periodKey, meta] of Object.entries(grouped[m])) {
+      if (!allPeriods.has(periodKey)) {
+        allPeriods.set(periodKey, meta);
+      }
     }
   }
 
-  const periods = Array.from(allPeriods).sort();
+  const periods = Array.from(allPeriods.entries())
+    .sort(([, left], [, right]) => left.sortValue - right.sortValue);
 
-  // Compute derived metrics
-  return periods.map((period) => {
+  return periods.map(([periodKey, meta]) => {
     let value = null;
 
     if (metric === 'free_cash_flow') {
-      const ocf = grouped['operating_cash_flow']?.[period];
-      const capex = grouped['capital_expenditures']?.[period];
-      if (ocf != null && capex != null) {
-        value = ocf - Math.abs(capex);
+      const directFcf = grouped['free_cash_flow']?.[periodKey]?.value;
+      if (directFcf != null) {
+        value = directFcf;
+      } else {
+        const ocf = grouped['operating_cash_flow']?.[periodKey]?.value;
+        const capex = grouped['capital_expenditures']?.[periodKey]?.value;
+        if (ocf != null && capex != null) {
+          value = ocf - Math.abs(capex);
+        }
       }
     } else if (metric === 'gross_margin') {
-      const gp = grouped['gross_profit']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const gp = grouped['gross_profit']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (gp != null && rev != null && rev !== 0) {
         value = gp / rev;
       }
     } else if (metric === 'operating_margin') {
-      const oi = grouped['operating_income']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const oi = grouped['operating_income']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (oi != null && rev != null && rev !== 0) {
         value = oi / rev;
       }
     } else if (metric === 'net_margin') {
-      const ni = grouped['net_income']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const ni = grouped['net_income']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (ni != null && rev != null && rev !== 0) {
         value = ni / rev;
       }
     } else {
-      value = grouped[metric]?.[period] ?? null;
+      value = grouped[metric]?.[periodKey]?.value ?? null;
     }
 
     return {
-      period,
+      period: periodKey,
       value,
-      label: periodType === 'quarterly' ? period : String(period),
+      label: periodType === 'quarterly' ? meta.label : String(meta.label),
     };
   }).filter((d) => d.value != null);
 }

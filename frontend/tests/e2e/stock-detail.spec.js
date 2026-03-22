@@ -19,6 +19,7 @@ test('stock detail critical path renders the main research surfaces', async ({ p
   await expect(page.getByRole('heading', { name: '5-Year Projection' })).toBeVisible();
 
   await page.getByRole('tab', { name: 'AI' }).click();
-  await expect(page.getByText(/queries today/i)).toBeVisible();
+  await expect(page.getByText(/free: 10\/day/i)).toBeVisible();
+  await expect(page.getByText(/sign in: 50\/day/i)).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Ask a question...' })).toBeVisible();
 });

@@ -77,3 +77,44 @@ def test_select_annual_fact_handles_duplicate_rank_candidates_without_crashing()
 
     assert selected is not None
     assert selected["val"] == 100
+
+
+def test_select_annual_fact_prefers_latest_period_when_same_filing_contains_multiple_frames():
+    entries = [
+        {
+            "metric_key": "revenue",
+            "tag": "Revenues",
+            "unit": "USD",
+            "form": "10-K",
+            "filed": "2026-02-25",
+            "start": "2023-01-30",
+            "end": "2024-01-28",
+            "val": 60922000000,
+        },
+        {
+            "metric_key": "revenue",
+            "tag": "Revenues",
+            "unit": "USD",
+            "form": "10-K",
+            "filed": "2026-02-25",
+            "start": "2024-01-29",
+            "end": "2025-01-26",
+            "val": 130497000000,
+        },
+        {
+            "metric_key": "revenue",
+            "tag": "Revenues",
+            "unit": "USD",
+            "form": "10-K",
+            "filed": "2026-02-25",
+            "start": "2025-01-27",
+            "end": "2026-01-25",
+            "val": 215938000000,
+        },
+    ]
+
+    selected = select_annual_fact(entries, metric_key="revenue")
+
+    assert selected is not None
+    assert selected["val"] == 215938000000
+    assert selected["end"] == "2026-01-25"

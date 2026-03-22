@@ -99,11 +99,15 @@ Latest verification pass:
 - `PLAYWRIGHT_BASE_URL=http://localhost:5173 npm --prefix frontend run test:e2e -- tests/e2e/stock-detail.spec.js`
 
 Next up:
-- M2 ingestion and canonical data is now in progress
-- the schema cut, metric registry, canonical `ingest_financials`, and `compute_snapshots` are now in place
-- local SQLite dev data was reset and rebuilt from the real pipeline for the 25-company development set
-- the local dev dataset now includes live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows for every seeded company
-- next M2 work is expanding beyond the 25-company dev set to the full S&P 500 and recording the launch coverage audit
+- M2 ingestion and canonical data is complete
+- the schema cut, metric registry, canonical `ingest_financials`, `update_prices`, and `compute_snapshots` are now in place
+- local SQLite dev data was reset and rebuilt from the real pipeline with the full 500-company universe
+- the current company universe is loaded at the company level by unique CIK, so the 503-row constituent snapshot normalizes to 500 companies after share-class dedupe
+- company metadata is still intentionally thin: the current universe loader populates `ticker`, `name`, `sector`, `industry`, and `cik`, so many `description`, `website`, and `exchange` fields remain blank until a dedicated metadata-enrichment step is added
+- the current local dataset includes live SEC facts, bounded raw payload retention, current quotes, and `MetricSnapshot` rows for all 500 companies
+- canonical facts can be rebuilt from retained raw SEC payloads with `ingest_financials --from-cache --force`, so full-universe replays do not depend on live SEC availability
+- the launch coverage audit artifact at [`docs/audits/sp500-launch-coverage-2026-03-22.md`](./docs/audits/sp500-launch-coverage-2026-03-22.md) now passes the `95%+` gate
+- `gross_profit` and `gross_margin` are audited conditionally, only where retained SEC payloads expose a comparable gross-profit or cost-of-revenue concept
 
 ## Local Development
 

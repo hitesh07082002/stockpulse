@@ -61,8 +61,38 @@ def company():
         company=company,
         metric_key="diluted_eps",
         period_type="annual",
+        fiscal_year=2023,
+        value=Decimal("12.00"),
+        period_end=date(2023, 6, 30),
+        filed_date=date(2023, 8, 1),
+        source_form="10-K",
+    )
+    FinancialFact.objects.create(
+        company=company,
+        metric_key="diluted_eps",
+        period_type="annual",
         fiscal_year=2024,
         value=Decimal("14.64"),
+        period_end=date(2024, 6, 30),
+        filed_date=date(2024, 8, 1),
+        source_form="10-K",
+    )
+    FinancialFact.objects.create(
+        company=company,
+        metric_key="free_cash_flow",
+        period_type="annual",
+        fiscal_year=2023,
+        value=Decimal("90000000000"),
+        period_end=date(2023, 6, 30),
+        filed_date=date(2023, 8, 1),
+        source_form="10-K",
+    )
+    FinancialFact.objects.create(
+        company=company,
+        metric_key="free_cash_flow",
+        period_type="annual",
+        fiscal_year=2024,
+        value=Decimal("100000000000"),
         period_end=date(2024, 6, 30),
         filed_date=date(2024, 8, 1),
         source_form="10-K",
@@ -139,13 +169,13 @@ def test_valuation_inputs_expose_earnings_and_cash_flow_modes(api_client, compan
 
     assert payload["earnings_mode"]["current_metric_label"] == "EPS"
     assert payload["earnings_mode"]["current_metric_value"] == pytest.approx(14.64, rel=1e-3)
-    assert payload["earnings_mode"]["growth_rate_default"] == 12.0
+    assert payload["earnings_mode"]["growth_rate_default"] == 20.0
     assert payload["earnings_mode"]["terminal_multiple_default"] == 28.4
     assert payload["earnings_mode"]["desired_return_default"] == 15.0
 
     assert payload["cash_flow_mode"]["current_metric_label"] == "FCF Per Share"
     assert payload["cash_flow_mode"]["current_metric_value"] == pytest.approx(13.46, rel=1e-3)
-    assert payload["cash_flow_mode"]["growth_rate_default"] == 12.0
+    assert payload["cash_flow_mode"]["growth_rate_default"] == 11.1
     assert payload["cash_flow_mode"]["terminal_multiple_default"] == pytest.approx(30.88, rel=1e-3)
     assert payload["cash_flow_mode"]["desired_return_default"] == 15.0
 

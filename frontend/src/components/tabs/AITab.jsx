@@ -13,6 +13,9 @@ const SUGGESTED_PROMPTS = [
   'Compare margins to sector average',
 ];
 
+const ANONYMOUS_DAILY_LIMIT = 10;
+const AUTHENTICATED_DAILY_LIMIT = 50;
+
 /* ────────────────────────────────────────────
    AITab Component
    ──────────────────────────────────────────── */
@@ -22,7 +25,6 @@ function AITab({ ticker, company }) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState('');
-  const [queryCount, setQueryCount] = useState(0);
 
   const messageEndRef = useRef(null);
   const messageAreaRef = useRef(null);
@@ -41,7 +43,6 @@ function AITab({ ticker, company }) {
 
     setError('');
     setInput('');
-    setQueryCount((prev) => prev + 1);
 
     /* Append user message and an empty AI placeholder */
     setMessages((prev) => [
@@ -66,10 +67,8 @@ function AITab({ ticker, company }) {
         });
       }
     } catch (err) {
-      if (err.message && err.message.includes('429')) {
-        setError(
-          `You've used ${queryCount}/50 queries today. Daily limit reached. Sign in for more.`
-        );
+      if (err.message && /limit/i.test(err.message)) {
+        setError(err.message);
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -107,7 +106,7 @@ function AITab({ ticker, company }) {
           Ask about {companyName}'s financials
         </span>
         <span className="text-xs font-data text-text-tertiary bg-elevated px-2 py-1 rounded-full">
-          {queryCount} / 50 queries today
+          Free: {ANONYMOUS_DAILY_LIMIT}/day · Sign in: {AUTHENTICATED_DAILY_LIMIT}/day
         </span>
       </div>
 

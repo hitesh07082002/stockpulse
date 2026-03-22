@@ -41,6 +41,7 @@ def test_compute_snapshots_creates_canonical_snapshot():
     _annual_fact(company, "operating_income", 2024, "300")
     _annual_fact(company, "net_income", 2024, "180")
     _annual_fact(company, "diluted_eps", 2024, "8")
+    _annual_fact(company, "dividends_per_share", 2024, "2")
     _annual_fact(company, "shareholders_equity", 2024, "600")
     _annual_fact(company, "total_debt", 2024, "300")
     _annual_fact(company, "operating_cash_flow", 2024, "250")
@@ -52,7 +53,7 @@ def test_compute_snapshots_creates_canonical_snapshot():
     run = IngestionRun.objects.get(source=IngestionRun.SOURCE_SNAPSHOTS)
 
     assert snapshot.pe_ratio == Decimal("12.50")
-    assert snapshot.dividend_yield is None
+    assert snapshot.dividend_yield == Decimal("0.0200")
     assert snapshot.revenue_growth_yoy == Decimal("0.2000")
     assert snapshot.gross_margin == Decimal("0.5000")
     assert snapshot.operating_margin == Decimal("0.2500")
