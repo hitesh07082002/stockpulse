@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from stocks.models import Company
 
@@ -17,11 +17,21 @@ class Command(BaseCommand):
             action="store_true",
             help="Preview changes without writing to the database.",
         )
+        parser.add_argument(
+            "--csv",
+            type=str,
+            default=str(CSV_PATH),
+            help="Path to the source CSV file.",
+        )
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
+        csv_path = Path(options["csv"]).expanduser()
 
-        with open(CSV_PATH, newline="") as f:
+        if not csv_path.exists():
+            raise CommandError(f"CSV file not found: {csv_path}")
+
+        with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
 

@@ -1,30 +1,45 @@
-const BASE_URL = 'http://localhost:8000/api';
+const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+
+function resolveBaseURL() {
+  if (RAW_BASE_URL.startsWith('http://') || RAW_BASE_URL.startsWith('https://')) {
+    return RAW_BASE_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    return new URL(RAW_BASE_URL, window.location.origin).toString().replace(/\/$/, '');
+  }
+
+  return `http://localhost${RAW_BASE_URL.startsWith('/') ? RAW_BASE_URL : `/${RAW_BASE_URL}`}`;
+}
 
 function buildURL(path, params) {
-  const url = new URL(`${BASE_URL}${path}`);
+  const url = new URL(`${resolveBaseURL()}${path}`);
+
   if (params) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null) {
+      if (value !== undefined && value !== null && value !== '') {
         searchParams.append(key, value);
       }
     }
-    const qs = searchParams.toString();
-    if (qs) {
-      url.search = qs;
+
+    if (searchParams.size > 0) {
+      url.search = searchParams.toString();
     }
   }
+
   return url.toString();
 }
 
 async function get(path, params) {
-  const url = buildURL(path, params);
-  const response = await fetch(url, {
+  const response = await fetch(buildURL(path, params), {
     credentials: 'include',
   });
+
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
+
   return response.json();
 }
 
@@ -44,8 +59,8 @@ export async function fetchPrices(ticker, range) {
   return get(`/companies/${ticker}/prices/`, { range });
 }
 
-export async function fetchDCFInputs(ticker) {
-  return get(`/companies/${ticker}/dcf-inputs/`);
+export async function fetchValuationInputs(ticker) {
+  return get(`/companies/${ticker}/valuation-inputs/`);
 }
 
 export async function fetchScreener(params) {
@@ -53,8 +68,7 @@ export async function fetchScreener(params) {
 }
 
 export async function* sendChatMessage(ticker, message) {
-  const url = `${BASE_URL}/companies/${ticker}/chat/`;
-  const response = await fetch(url, {
+  const response = await fetch(buildURL(`/companies/${ticker}/copilot/`), {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -77,25 +91,25 @@ export async function* sendChatMessage(ticker, message) {
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop();
+    buffer = lines.pop() || '';
 
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
 
       const json = line.slice(6);
-      let parsed;
+
       try {
-        parsed = JSON.parse(json);
+        const parsed = JSON.parse(json);
+
+        if (parsed.type === 'text') {
+          yield parsed.content;
+        } else if (parsed.type === 'done') {
+          return;
+        } else if (parsed.type === 'error') {
+          throw new Error(parsed.content || 'Stream error');
+        }
       } catch {
         continue;
-      }
-
-      if (parsed.type === 'text') {
-        yield parsed.content;
-      } else if (parsed.type === 'done') {
-        return;
-      } else if (parsed.type === 'error') {
-        throw new Error(parsed.content || 'Stream error');
       }
     }
   }

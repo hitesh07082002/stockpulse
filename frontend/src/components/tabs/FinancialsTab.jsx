@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react';
 import {
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
 import { useFinancials } from '../../hooks/useStockData';
@@ -35,16 +38,10 @@ function formatPercent(n) {
   return `${(Number(n) * 100).toFixed(1)}%`;
 }
 
-function formatRatio(n) {
-  if (n == null || isNaN(n)) return '—';
-  return Number(n).toFixed(2);
-}
-
 function formatChartValue(value, metric) {
   if (value == null || isNaN(value)) return '—';
   if (PERCENT_METRICS.includes(metric)) return formatPercent(value);
-  if (metric === 'eps') return formatEPS(value);
-  if (metric === 'debt_equity') return formatRatio(value);
+  if (metric === 'diluted_eps') return formatEPS(value);
   return formatLargeNumber(value);
 }
 
@@ -53,8 +50,7 @@ function formatYAxis(value, metric) {
   if (PERCENT_METRICS.includes(metric)) {
     return `${(value * 100).toFixed(0)}%`;
   }
-  if (metric === 'eps') return `$${value.toFixed(1)}`;
-  if (metric === 'debt_equity') return value.toFixed(1);
+  if (metric === 'diluted_eps') return `$${value.toFixed(1)}`;
   const abs = Math.abs(value);
   const sign = value < 0 ? '-' : '';
   if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(1)}T`;
@@ -78,20 +74,27 @@ const PERCENT_METRICS = [
 const TOP_METRICS = [
   { key: 'revenue', label: 'Revenue' },
   { key: 'net_income', label: 'Net Income' },
-  { key: 'eps', label: 'EPS' },
+  { key: 'diluted_eps', label: 'Diluted EPS' },
   { key: 'free_cash_flow', label: 'Free Cash Flow' },
 ];
 
 const MORE_METRICS = [
-  { key: 'ebitda', label: 'EBITDA' },
+  { key: 'gross_profit', label: 'Gross Profit' },
   { key: 'gross_margin', label: 'Gross Margin' },
   { key: 'operating_margin', label: 'Operating Margin' },
   { key: 'net_margin', label: 'Net Margin' },
   { key: 'total_debt', label: 'Total Debt' },
-  { key: 'debt_equity', label: 'Debt/Equity' },
+  { key: 'shareholders_equity', label: 'Shareholders Equity' },
   { key: 'roe', label: 'ROE' },
   { key: 'cash_and_equivalents', label: 'Cash & Equivalents' },
 ];
+
+const LINE_METRICS = new Set([
+  'gross_margin',
+  'operating_margin',
+  'net_margin',
+  'roe',
+]);
 
 /* ────────────────────────────────────────────
    Data processing
@@ -103,7 +106,7 @@ function processFinancialData(rawData) {
   const grouped = {};
 
   for (const row of rawData) {
-    const metric = row.metric;
+    const metric = row.metric_key;
     const period = row.fiscal_year || row.fiscal_period || row.period;
     const value = row.value != null ? Number(row.value) : null;
 
@@ -222,7 +225,7 @@ function SkeletonChart() {
    FinancialsTab
    ──────────────────────────────────────────── */
 
-function FinancialsTab({ ticker, company }) {
+function FinancialsTab({ ticker }) {
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [periodType, setPeriodType] = useState('annual');
 
@@ -249,6 +252,7 @@ function FinancialsTab({ ticker, company }) {
     TOP_METRICS.find((m) => m.key === selectedMetric)?.label ||
     MORE_METRICS.find((m) => m.key === selectedMetric)?.label ||
     selectedMetric;
+  const renderAsLine = LINE_METRICS.has(selectedMetric);
 
   if (isError) {
     return (
@@ -275,7 +279,7 @@ function FinancialsTab({ ticker, company }) {
               const isActive = selectedMetric === m.key;
 
               let displayValue;
-              if (m.key === 'eps') {
+              if (m.key === 'diluted_eps') {
                 displayValue = formatEPS(latest);
               } else {
                 displayValue = formatLargeNumber(latest);
@@ -339,55 +343,85 @@ function FinancialsTab({ ticker, company }) {
         <div className="bg-surface border border-border rounded-lg p-4">
           <h4 className="font-display text-lg font-bold text-text-primary">{selectedLabel}</h4>
           {chartData.length > 0 ? (
-            <div className="h-[400px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="accentGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#14B8A6" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#14B8A6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="var(--color-border)"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                    axisLine={{ stroke: 'var(--color-border)' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => formatYAxis(v, selectedMetric)}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomTooltip metric={selectedMetric} />}
-                    cursor={{ stroke: 'var(--color-text-tertiary)', strokeDasharray: '3 3' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#14B8A6"
-                    strokeWidth={2}
-                    fill="url(#accentGradient)"
-                    dot={false}
-                    activeDot={{
-                      r: 5,
-                      fill: '#14B8A6',
-                      stroke: 'var(--color-surface)',
-                      strokeWidth: 2,
-                    }}
-                  />
-                </AreaChart>
+            <div className="mt-4 w-full">
+              <ResponsiveContainer width="100%" height={360} minWidth={0}>
+                {renderAsLine ? (
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      vertical={false}
+                    />
+                    <ReferenceLine y={0} stroke="var(--color-text-secondary)" strokeOpacity={0.35} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={{ stroke: 'var(--color-border)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => formatYAxis(v, selectedMetric)}
+                      width={70}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip metric={selectedMetric} />}
+                      cursor={{ stroke: 'var(--color-text-tertiary)', strokeDasharray: '3 3' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#14B8A6"
+                      strokeWidth={2.5}
+                      dot={false}
+                      activeDot={{
+                        r: 5,
+                        fill: '#14B8A6',
+                        stroke: 'var(--color-surface)',
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </LineChart>
+                ) : (
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      vertical={false}
+                    />
+                    <ReferenceLine y={0} stroke="var(--color-text-secondary)" strokeOpacity={0.35} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={{ stroke: 'var(--color-border)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => formatYAxis(v, selectedMetric)}
+                      width={70}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip metric={selectedMetric} />}
+                      cursor={{ fill: 'rgba(20, 184, 166, 0.08)' }}
+                    />
+                    <Bar
+                      dataKey="value"
+                      fill="#14B8A6"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           ) : (

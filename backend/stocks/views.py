@@ -1,6 +1,4 @@
 import json
-import time
-from decimal import Decimal
 from datetime import date
 
 from django.conf import settings
@@ -8,18 +6,87 @@ from django.http import StreamingHttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from rest_framework import generics, filters, status
+from rest_framework import generics, filters
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from .models import Company, FinancialFact, StockMetrics
+from .models import Company, FinancialFact, MetricSnapshot
 from .serializers import (
     CompanyListSerializer, CompanyDetailSerializer,
-    FinancialFactSerializer, StockMetricsSerializer,
-    DCFInputSerializer, ChatMessageSerializer,
+    FinancialFactSerializer, MetricSnapshotSerializer,
 )
 from .xbrl_mapping import DCF_WARNING_SECTORS
+
+
+def _safe_number(value):
+    if value in (None, ''):
+        return None
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if number != number:
+        return None
+    return number
+
+
+def _get_metric_snapshot(company):
+    try:
+        return company.metrics
+    except MetricSnapshot.DoesNotExist:
+        return None
+
+
+def _latest_annual_fact(company, metric_key):
+    return FinancialFact.objects.filter(
+        company=company,
+        metric_key=metric_key,
+        period_type='annual',
+    ).order_by('-fiscal_year').first()
+
+
+def _compute_revenue_growth_default(company, snapshot):
+    if snapshot and snapshot.revenue_growth_yoy is not None:
+        return round(float(snapshot.revenue_growth_yoy) * 100, 1)
+
+    revenue_facts = list(
+        FinancialFact.objects.filter(
+            company=company,
+            metric_key='revenue',
+            period_type='annual',
+        ).order_by('-fiscal_year')[:2]
+    )
+    if len(revenue_facts) < 2:
+        return 10.0
+
+    latest = _safe_number(revenue_facts[0].value)
+    previous = _safe_number(revenue_facts[1].value)
+    if latest is None or previous in (None, 0):
+        return 10.0
+
+    return round(((latest - previous) / abs(previous)) * 100, 1)
+
+
+def _compute_eps_value(company, snapshot):
+    diluted_eps_fact = _latest_annual_fact(company, 'diluted_eps')
+    if diluted_eps_fact:
+        return round(float(diluted_eps_fact.value), 2)
+
+    current_price = _safe_number(company.current_price)
+    pe_ratio = _safe_number(snapshot.pe_ratio) if snapshot else None
+    if current_price not in (None, 0) and pe_ratio not in (None, 0):
+        return round(current_price / pe_ratio, 2)
+
+    net_income_fact = _latest_annual_fact(company, 'net_income')
+    shares_outstanding = _safe_number(company.shares_outstanding)
+    net_income = _safe_number(net_income_fact.value) if net_income_fact else None
+    if net_income is None or shares_outstanding in (None, 0):
+        return None
+
+    return round(net_income / shares_outstanding, 2)
 
 
 # --- Company endpoints ---
@@ -47,7 +114,7 @@ class CompanyDetailView(generics.RetrieveAPIView):
     lookup_url_kwarg = 'ticker'
 
     def get_queryset(self):
-        return Company.objects.all()
+        return Company.objects.select_related('metrics').all()
 
     def get_object(self):
         ticker = self.kwargs['ticker'].upper()
@@ -64,10 +131,10 @@ def financials_view(request, ticker):
     qs = FinancialFact.objects.filter(company=company)
 
     # Filter by metric(s)
-    metrics = request.query_params.get('metric')
+    metrics = request.query_params.get('metrics')
     if metrics:
         metric_list = [m.strip() for m in metrics.split(',')]
-        qs = qs.filter(metric__in=metric_list)
+        qs = qs.filter(metric_key__in=metric_list)
 
     # Filter by period type
     period_type = request.query_params.get('period_type')
@@ -98,9 +165,6 @@ def prices_view(request, ticker):
     valid_ranges = {'1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y', '5Y': '5y', 'MAX': 'max'}
     yf_period = valid_ranges.get(range_param, '1y')
 
-    # Determine cache TTL based on range
-    cache_ttl_hours = 4 if range_param in ('1M', '3M', '6M', '1Y') else 24
-
     try:
         import yfinance as yf
         stock = yf.Ticker(ticker)
@@ -116,12 +180,14 @@ def prices_view(request, ticker):
 
         data = []
         for idx, row in hist.iterrows():
+            adjusted_close = row.get('Adj Close', row.get('Close'))
             data.append({
                 'date': idx.strftime('%Y-%m-%d'),
                 'open': round(float(row['Open']), 2),
                 'high': round(float(row['High']), 2),
                 'low': round(float(row['Low']), 2),
                 'close': round(float(row['Close']), 2),
+                'adjusted_close': round(float(adjusted_close), 2),
                 'volume': int(row['Volume']),
             })
 
@@ -139,40 +205,57 @@ def prices_view(request, ticker):
             'data': [],
             'stale': True,
             'message': 'Price data temporarily unavailable',
-            'price_updated_at': company.price_updated_at.isoformat() if company.price_updated_at else None,
+            'quote_updated_at': company.quote_updated_at.isoformat() if company.quote_updated_at else None,
         })
 
 
-# --- DCF inputs endpoint ---
+# --- Valuation inputs endpoint ---
 
 @api_view(['GET'])
-def dcf_inputs_view(request, ticker):
+def valuation_inputs_view(request, ticker):
     ticker = ticker.upper()
     company = generics.get_object_or_404(Company, ticker=ticker)
+    snapshot = _get_metric_snapshot(company)
 
-    # Get latest operating cash flow and capex to compute FCF
-    ocf = FinancialFact.objects.filter(
-        company=company, metric='operating_cash_flow', period_type='annual'
-    ).order_by('-fiscal_year').first()
+    free_cash_flow_fact = _latest_annual_fact(company, 'free_cash_flow')
+    ocf = _latest_annual_fact(company, 'operating_cash_flow')
+    capex = _latest_annual_fact(company, 'capital_expenditures')
 
-    capex = FinancialFact.objects.filter(
-        company=company, metric='capital_expenditures', period_type='annual'
-    ).order_by('-fiscal_year').first()
+    free_cash_flow = _safe_number(free_cash_flow_fact.value) if free_cash_flow_fact else None
+    if free_cash_flow is None and ocf and capex:
+        free_cash_flow = float(ocf.value) - float(capex.value)
+    elif free_cash_flow is None and ocf:
+        free_cash_flow = float(ocf.value)
 
-    fcf = None
-    negative_fcf = False
-    if ocf and capex:
-        fcf = float(ocf.value) - float(capex.value)
-        negative_fcf = fcf < 0
-    elif ocf:
-        fcf = float(ocf.value)
-        negative_fcf = fcf < 0
+    negative_cash_flow = free_cash_flow is not None and free_cash_flow < 0
+    shares_outstanding = _safe_number(company.shares_outstanding)
+    current_price = _safe_number(company.current_price)
+    growth_rate_default = _compute_revenue_growth_default(company, snapshot)
 
-    sector_warning = ''
+    earnings_metric_value = _compute_eps_value(company, snapshot)
+    earnings_multiple = _safe_number(snapshot.pe_ratio) if snapshot else None
+    if earnings_multiple in (None, 0):
+        earnings_multiple = 18.0
+
+    cash_flow_metric_value = None
+    cash_flow_multiple = None
+    if free_cash_flow is not None and shares_outstanding not in (None, 0):
+        cash_flow_metric_value = round(free_cash_flow / shares_outstanding, 2)
+        if current_price not in (None, 0) and cash_flow_metric_value not in (None, 0):
+            cash_flow_multiple = round(current_price / cash_flow_metric_value, 2)
+
+    if cash_flow_multiple in (None, 0):
+        cash_flow_multiple = 15.0
+
+    warnings = []
     if company.sector in DCF_WARNING_SECTORS:
-        sector_warning = (
+        warnings.append(
             f"DCF models are less reliable for {company.sector} companies. "
             "Consider using P/E or P/B multiples instead."
+        )
+    if negative_cash_flow:
+        warnings.append(
+            "Free cash flow is currently negative, so cash-flow-based valuation should be used with caution."
         )
 
     data = {
@@ -181,9 +264,24 @@ def dcf_inputs_view(request, ticker):
         'sector': company.sector,
         'current_price': company.current_price,
         'shares_outstanding': company.shares_outstanding,
-        'free_cash_flow': fcf,
-        'sector_warning': sector_warning,
-        'negative_fcf_warning': negative_fcf,
+        'projection_years_default': 5,
+        'warnings': warnings,
+        'earnings_mode': {
+            'current_metric_label': 'EPS',
+            'current_metric_value': earnings_metric_value,
+            'growth_rate_default': growth_rate_default,
+            'terminal_multiple_default': earnings_multiple,
+            'desired_return_default': 15.0,
+            'current_trading_multiple': _safe_number(snapshot.pe_ratio) if snapshot else None,
+        },
+        'cash_flow_mode': {
+            'current_metric_label': 'FCF Per Share',
+            'current_metric_value': cash_flow_metric_value,
+            'growth_rate_default': growth_rate_default,
+            'terminal_multiple_default': cash_flow_multiple,
+            'desired_return_default': 15.0,
+            'current_trading_multiple': cash_flow_multiple if cash_flow_metric_value not in (None, 0) else None,
+        },
     }
 
     return Response(data)
@@ -192,11 +290,11 @@ def dcf_inputs_view(request, ticker):
 # --- Screener endpoint ---
 
 class ScreenerView(generics.ListAPIView):
-    serializer_class = StockMetricsSerializer
+    serializer_class = MetricSnapshotSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        qs = StockMetrics.objects.select_related('company').all()
+        qs = MetricSnapshot.objects.select_related('company').all()
 
         params = self.request.query_params
 
@@ -209,18 +307,18 @@ class ScreenerView(generics.ListAPIView):
         range_filters = {
             'pe_min': ('pe_ratio__gte', float),
             'pe_max': ('pe_ratio__lte', float),
-            'dividend_min': ('dividend_yield__gte', float),
-            'dividend_max': ('dividend_yield__lte', float),
-            'margin_min': ('profit_margin__gte', float),
-            'margin_max': ('profit_margin__lte', float),
+            'dividend_yield_min': ('dividend_yield__gte', float),
+            'dividend_yield_max': ('dividend_yield__lte', float),
+            'net_margin_min': ('net_margin__gte', float),
+            'net_margin_max': ('net_margin__lte', float),
             'roe_min': ('roe__gte', float),
             'roe_max': ('roe__lte', float),
-            'de_min': ('debt_to_equity__gte', float),
-            'de_max': ('debt_to_equity__lte', float),
-            'mcap_min': ('company__market_cap__gte', int),
-            'mcap_max': ('company__market_cap__lte', int),
-            'growth_min': ('revenue_growth_yoy__gte', float),
-            'growth_max': ('revenue_growth_yoy__lte', float),
+            'market_cap_min': ('company__market_cap__gte', int),
+            'market_cap_max': ('company__market_cap__lte', int),
+            'revenue_growth_min': ('revenue_growth_yoy__gte', float),
+            'revenue_growth_max': ('revenue_growth_yoy__lte', float),
+            'debt_to_equity_min': ('debt_to_equity__gte', float),
+            'debt_to_equity_max': ('debt_to_equity__lte', float),
         }
 
         for param_name, (field_lookup, cast_fn) in range_filters.items():
@@ -232,16 +330,20 @@ class ScreenerView(generics.ListAPIView):
                     pass
 
         # Sorting
-        sort_field = params.get('sort', 'company__market_cap')
+        sort_field = params.get('sort', 'market_cap')
         order = params.get('order', 'desc')
         allowed_sorts = {
             'market_cap': 'company__market_cap',
+            'current_price': 'company__current_price',
             'pe_ratio': 'pe_ratio',
             'dividend_yield': 'dividend_yield',
-            'profit_margin': 'profit_margin',
+            'net_margin': 'net_margin',
             'roe': 'roe',
-            'revenue_growth': 'revenue_growth_yoy',
+            'revenue_growth_yoy': 'revenue_growth_yoy',
+            'debt_to_equity': 'debt_to_equity',
             'ticker': 'company__ticker',
+            'name': 'company__name',
+            'sector': 'company__sector',
         }
         db_field = allowed_sorts.get(sort_field, 'company__market_cap')
         if order == 'asc':
@@ -298,24 +400,24 @@ def _build_financial_context(company):
         company=company,
         period_type='annual',
         fiscal_year__gte=current_year - 10,
-    ).order_by('metric', 'fiscal_year')
+    ).order_by('metric_key', 'fiscal_year')
 
     # Last 8 quarters
     quarterly_facts = FinancialFact.objects.filter(
         company=company,
         period_type='quarterly',
-    ).order_by('metric', '-fiscal_year', '-fiscal_quarter')[:200]
+    ).order_by('metric_key', '-fiscal_year', '-fiscal_quarter')[:200]
 
     # Group by metric
     annual_by_metric = {}
     for fact in annual_facts:
-        annual_by_metric.setdefault(fact.metric, []).append(
+        annual_by_metric.setdefault(fact.metric_key, []).append(
             f"  {fact.fiscal_year}: {fact.value:,.0f}"
         )
 
     quarterly_by_metric = {}
     for fact in quarterly_facts:
-        quarterly_by_metric.setdefault(fact.metric, []).append(
+        quarterly_by_metric.setdefault(fact.metric_key, []).append(
             f"  {fact.fiscal_year} Q{fact.fiscal_quarter or '?'}: {fact.value:,.0f}"
         )
 
@@ -340,17 +442,17 @@ def _build_financial_context(company):
 
     # Add pre-computed metrics
     try:
-        metrics = company.metrics
+        metrics = company.metric_snapshot
         lines.extend([
             "\n=== Current Metrics ===",
             f"P/E Ratio: {metrics.pe_ratio}" if metrics.pe_ratio else "",
-            f"Profit Margin: {float(metrics.profit_margin)*100:.1f}%" if metrics.profit_margin else "",
+            f"Net Margin: {float(metrics.net_margin)*100:.1f}%" if metrics.net_margin else "",
             f"ROE: {float(metrics.roe)*100:.1f}%" if metrics.roe else "",
             f"Debt/Equity: {metrics.debt_to_equity}" if metrics.debt_to_equity else "",
             f"Dividend Yield: {float(metrics.dividend_yield)*100:.2f}%" if metrics.dividend_yield else "",
             f"Revenue Growth YoY: {float(metrics.revenue_growth_yoy)*100:.1f}%" if metrics.revenue_growth_yoy else "",
         ])
-    except StockMetrics.DoesNotExist:
+    except MetricSnapshot.DoesNotExist:
         pass
 
     return "\n".join(line for line in lines if line)
