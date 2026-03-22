@@ -1,0 +1,92 @@
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Custom design tokens via Tailwind v4 theme */
+@theme {
+  --font-display: 'Satoshi', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-data: 'JetBrains Mono', monospace;
+
+  --color-base: #09090B;
+  --color-surface: #18181B;
+  --color-elevated: #27272A;
+  --color-hover: #3F3F46;
+  --color-border: #27272A;
+  --color-border-hover: #3F3F46;
+
+  --color-text-primary: #FAFAFA;
+  --color-text-secondary: #A1A1AA;
+  --color-text-tertiary: #71717A;
+  --color-text-inverse: #09090B;
+
+  --color-accent: #14B8A6;
+  --color-accent-hover: #2DD4BF;
+  --color-accent-muted: rgba(20, 184, 166, 0.15);
+
+  --color-up: #4ADE80;
+  --color-down: #F87171;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+}
+
+/* Light mode overrides */
+[data-theme="light"] {
+  --color-base: #FAFAFA;
+  --color-surface: #FFFFFF;
+  --color-elevated: #F4F4F5;
+  --color-hover: #E4E4E7;
+  --color-border: #E4E4E7;
+  --color-border-hover: #D4D4D8;
+  --color-text-primary: #09090B;
+  --color-text-secondary: #52525B;
+  --color-text-tertiary: #71717A;
+  --color-text-inverse: #FAFAFA;
+  --color-accent: #0D9488;
+  --color-accent-hover: #0F766E;
+  --color-accent-muted: rgba(20, 184, 166, 0.10);
+  --color-up: #16A34A;
+  --color-down: #DC2626;
+}
+
+/* Base styles */
+body {
+  margin: 0;
+  background-color: var(--color-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--color-base); }
+::-webkit-scrollbar-thumb { background: var(--color-elevated); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-hover); }
+
+/* Skeleton animation */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.skeleton {
+  background-color: var(--color-elevated);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Blinking cursor for AI streaming */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
