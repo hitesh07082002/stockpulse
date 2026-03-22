@@ -77,31 +77,31 @@ function OverviewTab({ ticker, company }) {
   const stats = [
     {
       label: 'Market Cap',
-      value: formatLargeNumber(data.marketCap),
+      value: formatLargeNumber(data.market_cap),
     },
     {
       label: 'P/E Ratio',
-      value: data.peRatio != null && !isNaN(data.peRatio)
-        ? Number(data.peRatio).toFixed(2)
+      value: data.pe_ratio != null && !isNaN(data.pe_ratio)
+        ? Number(data.pe_ratio).toFixed(2)
         : '—',
     },
     {
       label: '52-Week Range',
       custom: (
         <RangeBar
-          low={data.week52Low}
-          high={data.week52High}
-          current={data.currentPrice}
+          low={data.week_52_low}
+          high={data.week_52_high}
+          current={data.current_price}
         />
       ),
     },
     {
       label: 'Dividend Yield',
-      value: formatPercent(data.dividendYield),
+      value: formatPercent(data.dividend_yield),
     },
     {
       label: 'Shares Outstanding',
-      value: formatShareCount(data.sharesOutstanding),
+      value: formatShareCount(data.shares_outstanding),
     },
     {
       label: 'Sector / Industry',
