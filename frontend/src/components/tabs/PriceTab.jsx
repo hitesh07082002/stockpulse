@@ -64,14 +64,15 @@ function PriceTab({ ticker, company }) {
 
   const { data, isLoading, isError, error } = usePrices(ticker, selectedRange);
 
-  /* ---- Create chart on mount ---- */
+  /* ---- Create chart once data is available ---- */
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || isLoading) return;
 
     const textColor = resolveTextColor();
+    const width = containerRef.current.clientWidth || 300;
 
     const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
+      width,
       height: 500,
       layout: {
         background: { color: COLORS.bgTransparent },
@@ -126,7 +127,7 @@ function PriceTab({ ticker, company }) {
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, []);
+  }, [isLoading]);
 
   /* ---- Handle window resize ---- */
   useEffect(() => {
@@ -149,13 +150,14 @@ function PriceTab({ ticker, company }) {
     const chart = chartRef.current;
     if (!candleSeries || !volumeSeries || !chart) return;
 
-    if (!data || !data.prices || data.prices.length === 0) {
+    const prices = data?.data ?? data?.prices ?? [];
+    if (prices.length === 0) {
       candleSeries.setData([]);
       volumeSeries.setData([]);
       return;
     }
 
-    const candles = data.prices.map((d) => ({
+    const candles = prices.map((d) => ({
       time: d.date,
       open: d.open,
       high: d.high,
@@ -163,7 +165,7 @@ function PriceTab({ ticker, company }) {
       close: d.close,
     }));
 
-    const volumes = data.prices.map((d) => ({
+    const volumes = prices.map((d) => ({
       time: d.date,
       value: d.volume,
       color: d.close >= d.open ? COLORS.volumeUp : COLORS.volumeDown,
@@ -233,12 +235,12 @@ function PriceTab({ ticker, company }) {
         </div>
       )}
 
-      <div
-        ref={containerRef}
-        className={`w-full h-[500px] rounded-lg overflow-hidden ${
-          isLoading ? 'invisible h-0 overflow-hidden' : ''
-        }`}
-      />
+      {!isLoading && (
+        <div
+          ref={containerRef}
+          className="w-full h-[500px] rounded-lg overflow-hidden"
+        />
+      )}
     </div>
   );
 }
