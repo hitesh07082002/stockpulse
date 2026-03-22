@@ -710,8 +710,8 @@ For 10.10, derived metrics in the launch-critical set count as covered only when
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
 | Adversarial | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 6 issues, 0 critical gaps |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL) | score: 7/10 → 9/10, 6 decisions |
 
 - **CODEX (plan review):** 5 P0 + 4 P1 + 1 P2 findings. Key issues addressed: verification gate structure, quote dependency contradiction, AI budget race condition, valuation guardrails, auth account linking.
 - **UNRESOLVED:** 0
-- **VERDICT:** ENG CLEARED — ready to implement. CEO and Design reviews not yet run.
+- **VERDICT:** ENG + DESIGN CLEARED — ready to implement.

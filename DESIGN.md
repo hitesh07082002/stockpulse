@@ -172,11 +172,64 @@
   - Use fades and brightness shifts, not movement-heavy transitions
   - Chart updates should feel stable and quiet
 
+## Site Structure and Content Hierarchy
+
+```text
+/  (Landing)
+├── [1st] Search bar — dominant, above fold, owns the page
+├── [2nd] Quick pick tickers — immediate entry points into coverage
+└── [3rd] Trust statement — one line about coverage and methodology
+
+/stock/:ticker  (Stock Detail)
+├── [PERSISTENT] Company header: ticker > name > quote > change > sector
+├── Tab bar: Overview | Financials | Price | Valuation | AI
+│
+├── Overview tab
+│   ├── [1st] Key metric cards (4-6): PE, market cap, revenue, margins
+│   ├── [2nd] Company description (when metadata is available)
+│   └── [3rd] Sector and industry context
+│
+├── Financials tab (HERO — most substantial tab)
+│   ├── [1st] Period toggle: Annual | Quarterly
+│   ├── [2nd] Primary chart: Revenue + Net Income bars
+│   ├── [3rd] Secondary charts: margins, cash flow, debt
+│   └── [4th] Data table with full metric history
+│
+├── Price tab
+│   ├── [1st] Range selector: 1M 3M 6M 1Y 5Y MAX
+│   ├── [2nd] Price line chart (lightweight-charts, adjusted close)
+│   └── [3rd] Stale data badge near chart header (if applicable)
+│
+├── Valuation tab
+│   ├── [1st] Mode toggle: Earnings | Cash Flow
+│   ├── [2nd] Summary result cards (implied value, upside/downside vs current)
+│   ├── [3rd] Editable assumptions (growth rate, terminal multiple, desired return)
+│   ├── [4th] 5-year projection chart
+│   └── [5th] Guardrail warnings (financial sector, negative earnings/FCF, missing data)
+│
+└── AI tab
+    ├── [1st] Suggested prompts (3-4 concrete, numeric questions)
+    ├── [2nd] Response stream area
+    ├── [3rd] Chat input (sticky bottom on mobile)
+    └── [4th] Quota indicator (subtle, non-alarming)
+
+/screener
+├── [1st] Filter controls (sidebar on desktop, bottom sheet on mobile)
+├── [2nd] Results table with sortable columns
+└── [3rd] Result count or empty state
+
+/about
+├── [1st] Methodology summary
+├── [2nd] Data source provenance (SEC, yfinance)
+└── [3rd] Architecture diagram
+```
+
 ## Page Templates
 
 ### Landing Page
 - Search sits above the fold and owns the page.
-- Supporting content is lightweight: quick tickers, one-line trust copy, and maybe two short proof points about coverage and methodology.
+- Supporting content is lightweight: quick tickers and a one-line trust statement.
+- The trust statement should be specific and factual, not marketing copy. Example tone: "Normalized SEC financial data for 500 S&P companies" or "Research 500 companies with real SEC filings and AI analysis." Avoid generic claims like "the best stock research tool."
 - No live market movers grid in V1.
 
 ### Stock Detail
@@ -186,7 +239,7 @@
 
 ### Screener
 - Desktop: filter sidebar plus results table.
-- Mobile: filters in a bottom sheet, results as stacked cards.
+- Mobile: filters in a bottom sheet, results as stacked cards. Show primary filters (sector, market cap, PE, positive FCF toggle) by default; remaining filters behind a "More filters" expand.
 - V1 filter set stays focused: sector, industry, market cap, PE, revenue growth, gross margin, operating margin, debt-to-equity, and positive free-cash-flow toggle.
 - No saved screens, custom columns, or advanced boolean filter builders in V1.
 
@@ -226,7 +279,7 @@
 ### Tabs
 - Tabs should look operational, not decorative.
 - Active tab uses accent color and a hard underline.
-- On mobile, tabs scroll horizontally without wrapping into two rows.
+- On mobile, tabs scroll horizontally without wrapping into two rows. A subtle gradient fade on the right edge signals that more tabs exist off-screen.
 
 ### Tables
 - Numeric columns are right-aligned.
@@ -327,23 +380,49 @@
 
 ## Interaction State Contract
 
-### Loading
-- Use skeletons shaped like the final content.
-- No centered spinners for page-level loads.
-
-### Empty
-- Empty states should be calm and factual.
-- Prefer “No financial data available for this metric” over cute copy.
-
-### Error
+### General Rules
+- Use skeletons shaped like the final content. No centered spinners for page-level loads.
+- Empty states should be calm and factual. No cute copy.
 - Errors should tell the user what failed and whether retrying could help.
-- Avoid generic “Something went wrong” as the only message.
+- Stale is a warning state, not an error state. Show last-updated time.
 
-### Stale Data
-- Stale is a warning state, not an error state.
-- Show last-updated time next to the stale label.
+### Per-Feature State Table
 
-### AI Limits
+```text
+FEATURE              | LOADING              | EMPTY                           | ERROR                          | STALE
+---------------------|----------------------|---------------------------------|--------------------------------|----------------------------
+Search typeahead     | Subtle spinner in    | “No companies match”            | Silent — show no results       | n/a
+                     | input field          |                                 |                                |
+Company header       | Skeleton: ticker +   | n/a (404 → error page)          | “Company not found” + back     | Quote: amber badge +
+                     | quote placeholder    |                                 | link to search                 | “Updated X min ago”
+Overview tab         | 4-6 skeleton cards   | “Overview data not yet          | “Failed to load overview.      | n/a (reads snapshot)
+                     |                      | available for [TICKER]”         | Try refreshing.”               |
+Financials tab       | Skeleton chart +     | “No financial data filed with   | “Financial data unavailable.   | n/a (reads canonical facts)
+                     | skeleton table       | the SEC for [TICKER]”           | Try again later.”              |
+Price tab            | Skeleton chart area  | “No price history available”    | “Price data unavailable.       | Amber “Stale” badge +
+                     |                      |                                 | Retry.”                        | “Last updated [time]”
+Valuation tab        | Skeleton cards +     | “Insufficient data for          | “Valuation inputs unavailable” | n/a
+                     | skeleton chart       | valuation” (missing inputs)     |                                |
+                     |                      | “Not applicable for financial   |                                |
+                     |                      | sector companies” (guardrail)   |                                |
+AI tab               | Streaming dots or    | Suggested prompts visible       | “AI service unavailable.       | n/a
+                     | skeleton response    | (no conversation yet)           | Try again shortly.”            |
+AI quota exhausted   | n/a                  | “You've used your 10 free       | n/a                            | n/a
+  (anonymous)        |                      | prompts today. Sign in for      |                                |
+                     |                      | 50 daily prompts.” + sign-in    |                                |
+AI quota exhausted   | n/a                  | “Daily limit reached. Your      | n/a                            | n/a
+  (authenticated)    |                      | prompts reset tomorrow.”        |                                |
+AI budget exhausted  | n/a                  | “AI is temporarily unavailable  | n/a                            | n/a
+  (global)           |                      | due to high demand. Try again   |                                |
+                     |                      | tomorrow.”                      |                                |
+Screener results     | Skeleton table rows  | “No companies match your        | “Screener unavailable.         | n/a (reads snapshot)
+                     |                      | filters. Try broadening your    | Try again.”                    |
+                     |                      | criteria.” + reset link         |                                |
+Auth modal           | Button loading state | n/a                             | “Sign-in failed. Try again     | n/a
+                     |                      |                                 | or use email/password.”        |
+```
+
+### AI Limits Display
 - Anonymous users get 10 AI prompts per day.
 - Authenticated users get 50 AI prompts per day.
 - If the anonymous quota is exhausted, explain the limit clearly and offer sign-in for the higher authenticated allowance.
@@ -373,6 +452,38 @@
 - Visible focus ring using teal outline
 - Proper `tablist`, landmarks, labels, and keyboard support
 - Charts require text summaries or table alternatives where needed
+
+## User Journey — Emotional Arc
+
+The primary user journey and the emotional design intent at each step:
+
+```text
+STEP | USER DOES                    | USER FEELS               | DESIGN SUPPORTS IT WITH
+-----|------------------------------|--------------------------|------------------------------------
+1    | Lands on /                   | "This is serious."       | No marketing hero. Search dominates.
+     |                              | (5-sec visceral)         | Dark theme, clean typography, calm.
+2    | Types a company name         | "This is fast."          | Instant typeahead. Ticker-first results.
+     |                              |                          | Keyboard navigation works.
+3    | Opens /stock/:ticker         | "I trust this data."     | Real SEC data. Freshness badge visible.
+     |                              | (5-min behavioral)       | Quote with timestamp. No fake numbers.
+4    | Browses Financials tab       | "This is comprehensive." | Multi-year charts. Bar + line combos.
+     |                              |                          | JetBrains Mono numbers. Dense but clear.
+5    | Checks Price tab             | "Clean and focused."     | One line, adjusted close, range selector.
+     |                              |                          | No candlestick noise. Stale badge if needed.
+6    | Tries Valuation tab          | "I can think with this." | Assumption inputs are few and clear.
+     |                              |                          | Projection chart shows the consequence.
+     |                              |                          | Guardrails prevent garbage output.
+7    | Asks AI a question           | "It knows this company." | Grounded in the same data I just saw.
+     |                              |                          | Admits gaps. Numeric citations are scannable.
+8    | Hits anonymous quota         | "Fair enough."           | Clear limit. Sign-in gets me more.
+     |                              | (not punished)           | Not a paywall — browsing stays open.
+9    | Signs in with Google         | "That was easy."         | One click. Modal. Back to where I was.
+     |                              |                          | Higher AI limit immediately available.
+```
+
+**Two audiences, one journey:**
+- **Retail investor:** Completes steps 1-7, may never hit 8. Values: speed, trust, clarity.
+- **Hiring manager / recruiter:** Skims steps 1-4 in under 60 seconds. Values: polish, taste, real data (not Lorem ipsum). The Financials tab is the "wow" moment — this is where engineering depth becomes visible.
 
 ## Anti-Slop Rules
 - No marketing hero
