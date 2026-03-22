@@ -27,7 +27,7 @@ function formatShareCount(n) {
 
 function formatPercent(n) {
   if (n == null || isNaN(n)) return '—';
-  return `${Number(n).toFixed(2)}%`;
+  return `${(Number(n) * 100).toFixed(2)}%`;
 }
 
 /* ────────────────────────────────────────────
