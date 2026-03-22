@@ -442,7 +442,7 @@ def _build_financial_context(company):
 
     # Add pre-computed metrics
     try:
-        metrics = company.metric_snapshot
+        metrics = company.metrics
         lines.extend([
             "\n=== Current Metrics ===",
             f"P/E Ratio: {metrics.pe_ratio}" if metrics.pe_ratio else "",

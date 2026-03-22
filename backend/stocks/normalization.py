@@ -74,10 +74,15 @@ def select_annual_fact(entries, allowed_unit="USD", metric_key=None):
         filed_ordinal = filed_at.toordinal() if filed_at else 0
         candidates.append(
             (
-                abs(duration_days - 365),
-                -filed_ordinal,
-                tag_priority(metric_key, entry.get("tag", "")),
-                entry.get("tag", ""),
+                (
+                    abs(duration_days - 365),
+                    -filed_ordinal,
+                    tag_priority(metric_key, entry.get("tag", "")),
+                    entry.get("tag", ""),
+                    entry.get("form", ""),
+                    entry.get("end", ""),
+                    entry.get("start", ""),
+                ),
                 entry,
             )
         )
@@ -85,7 +90,7 @@ def select_annual_fact(entries, allowed_unit="USD", metric_key=None):
     if not candidates:
         return None
 
-    _, _, _, _, selected = min(candidates)
+    _, selected = min(candidates, key=lambda candidate: candidate[0])
     resolved_metric_key = metric_key or _entry_metric_key(selected)
     return {
         **selected,
