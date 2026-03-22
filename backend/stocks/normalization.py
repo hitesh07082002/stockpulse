@@ -72,11 +72,17 @@ def select_annual_fact(entries, allowed_unit="USD", metric_key=None):
 
         filed_at = _parse_iso_date(entry.get("filed"))
         filed_ordinal = filed_at.toordinal() if filed_at else 0
+        period_end = _parse_iso_date(entry.get("end"))
+        period_end_ordinal = period_end.toordinal() if period_end else 0
+        period_start = _parse_iso_date(entry.get("start"))
+        period_start_ordinal = period_start.toordinal() if period_start else 0
         candidates.append(
             (
                 (
                     abs(duration_days - 365),
                     -filed_ordinal,
+                    -period_end_ordinal,
+                    -period_start_ordinal,
                     tag_priority(metric_key, entry.get("tag", "")),
                     entry.get("tag", ""),
                     entry.get("form", ""),

@@ -5,6 +5,7 @@ Usage:
     python manage.py ingest_financials
     python manage.py ingest_financials --ticker AAPL
     python manage.py ingest_financials --force
+    python manage.py ingest_financials --from-cache
 """
 
 from collections import defaultdict
@@ -66,19 +67,27 @@ class Command(BaseCommand):
             default=False,
             help="Re-ingest even if a successful run exists within the last 7 days.",
         )
+        parser.add_argument(
+            "--from-cache",
+            action="store_true",
+            default=False,
+            help="Rebuild canonical facts from the latest retained RawSecPayload rows instead of fetching SEC again.",
+        )
 
     def handle(self, *args, **options):
         ticker = options["ticker"]
         force = options["force"]
+        from_cache = options["from_cache"]
         companies = self._resolve_companies(ticker)
 
         self.stdout.write(
-            f"Starting SEC ingestion for {len(companies)} company(ies) (force={force})."
+            f"Starting SEC ingestion for {len(companies)} company(ies) "
+            f"(force={force}, from_cache={from_cache})."
         )
 
         summary = {"success": 0, "failed": 0, "skipped": 0}
         for company in companies:
-            status = self._process_company(company, force=force)
+            status = self._process_company(company, force=force, from_cache=from_cache)
             summary[status] += 1
 
         self.stdout.write(
@@ -98,10 +107,10 @@ class Command(BaseCommand):
                 raise CommandError(f"Company with ticker '{ticker}' not found.") from exc
         return list(Company.objects.order_by("ticker"))
 
-    def _process_company(self, company, *, force):
+    def _process_company(self, company, *, force, from_cache):
         self.stdout.write(f"[{company.ticker}] Processing CIK={company.cik} ...")
 
-        if not force and self._recently_ingested(company):
+        if not force and not from_cache and self._recently_ingested(company):
             self.stdout.write(
                 f"  Skipped — successful SEC ingestion within last {COOLDOWN_DAYS} days."
             )
@@ -118,22 +127,34 @@ class Command(BaseCommand):
         raw_submissions = None
 
         try:
-            companyfacts_payload = self._fetch_companyfacts(company)
-            raw_companyfacts = self._record_payload(
-                company=company,
-                source=RawSecPayload.SOURCE_COMPANYFACTS,
-                status=RawSecPayload.STATUS_SUCCESS,
-                payload=companyfacts_payload,
-                retention_note="latest_success",
-            )
-            submissions_payload = self._fetch_submissions(company)
-            raw_submissions = self._record_payload(
-                company=company,
-                source=RawSecPayload.SOURCE_SUBMISSIONS,
-                status=RawSecPayload.STATUS_SUCCESS,
-                payload=submissions_payload,
-                retention_note="latest_success",
-            )
+            if from_cache:
+                raw_companyfacts = self._latest_success_payload(
+                    company,
+                    RawSecPayload.SOURCE_COMPANYFACTS,
+                )
+                raw_submissions = self._latest_success_payload(
+                    company,
+                    RawSecPayload.SOURCE_SUBMISSIONS,
+                )
+                companyfacts_payload = raw_companyfacts.payload_json
+                submissions_payload = raw_submissions.payload_json
+            else:
+                companyfacts_payload = self._fetch_companyfacts(company)
+                raw_companyfacts = self._record_payload(
+                    company=company,
+                    source=RawSecPayload.SOURCE_COMPANYFACTS,
+                    status=RawSecPayload.STATUS_SUCCESS,
+                    payload=companyfacts_payload,
+                    retention_note="latest_success",
+                )
+                submissions_payload = self._fetch_submissions(company)
+                raw_submissions = self._record_payload(
+                    company=company,
+                    source=RawSecPayload.SOURCE_SUBMISSIONS,
+                    status=RawSecPayload.STATUS_SUCCESS,
+                    payload=submissions_payload,
+                    retention_note="latest_success",
+                )
 
             fact_models = self._build_financial_facts(company, companyfacts_payload)
             if not fact_models:
@@ -179,6 +200,7 @@ class Command(BaseCommand):
             run.details_json = {
                 "error": str(exc),
                 "traceback_tail": traceback.format_exc().splitlines()[-8:],
+                "from_cache": from_cache,
             }
             run.completed_at = timezone.now()
             run.save(update_fields=["status", "details_json", "completed_at"])
@@ -247,6 +269,20 @@ class Command(BaseCommand):
             payload_json=payload,
             retention_note=retention_note,
         )
+
+    def _latest_success_payload(self, company, source):
+        payload = (
+            RawSecPayload.objects.filter(
+                company=company,
+                source=source,
+                status=RawSecPayload.STATUS_SUCCESS,
+            )
+            .order_by("-fetched_at")
+            .first()
+        )
+        if payload is None:
+            raise ValueError(f"No cached {source} payload found for {company.ticker}")
+        return payload
 
     def _replace_company_facts(self, company, fact_models, raw_companyfacts, raw_submissions):
         deduped_facts, duplicate_collisions = self._dedupe_fact_models(fact_models)
@@ -352,7 +388,21 @@ class Command(BaseCommand):
                     )
                 )
 
+        fact_models.extend(self._derive_gross_profit_facts(company, fact_models))
+        fact_models.extend(self._derive_total_debt_facts(company, fact_models))
         fact_models.extend(self._derive_free_cash_flow_facts(company, fact_models))
+        fact_models.extend(
+            self._derive_missing_annual_rollups(
+                company,
+                fact_models,
+                metric_keys=(
+                    "gross_profit",
+                    "cost_of_revenue",
+                    "free_cash_flow",
+                    "dividends_per_share",
+                ),
+            )
+        )
         return fact_models
 
     def _collect_metric_entries(self, payload):
@@ -677,11 +727,17 @@ class Command(BaseCommand):
                 continue
 
             filed_ordinal = self._date_ordinal(entry.get("filed"))
+            period_end = self._parse_iso_date(entry.get("end"))
+            period_end_ordinal = period_end.toordinal() if period_end else 0
+            period_start = self._parse_iso_date(entry.get("start"))
+            period_start_ordinal = period_start.toordinal() if period_start else 0
             candidates.append(
                 (
                     (
                         abs(duration_days - ideal_days),
                         -filed_ordinal,
+                        -period_end_ordinal,
+                        -period_start_ordinal,
                         tag_priority(metric_key, entry.get("tag", "")),
                         entry.get("tag", ""),
                         entry.get("form", ""),
@@ -725,11 +781,14 @@ class Command(BaseCommand):
                 continue
 
             filed_ordinal = self._date_ordinal(entry.get("filed"))
+            period_start = self._parse_iso_date(entry.get("start"))
+            period_start_ordinal = period_start.toordinal() if period_start else 0
             candidates.append(
                 (
                     (
                         -period_end.toordinal(),
                         -filed_ordinal,
+                        -period_start_ordinal,
                         tag_priority(metric_key, entry.get("tag", "")),
                         entry.get("tag", ""),
                         entry.get("form", ""),
@@ -790,6 +849,150 @@ class Command(BaseCommand):
             )
 
         return derived
+
+    def _derive_gross_profit_facts(self, company, fact_models):
+        facts_by_period = self._facts_by_period(fact_models)
+        derived = []
+
+        for (period_type, fiscal_year, fiscal_quarter, period_end), facts in facts_by_period.items():
+            if facts.get("gross_profit") is not None:
+                continue
+
+            revenue = facts.get("revenue")
+            cost_of_revenue = facts.get("cost_of_revenue")
+            if revenue is None or cost_of_revenue is None:
+                continue
+
+            derived.append(
+                FinancialFact(
+                    company=company,
+                    metric_key="gross_profit",
+                    period_type=period_type,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=fiscal_quarter,
+                    period_start=revenue.period_start,
+                    period_end=period_end,
+                    value=revenue.value - cost_of_revenue.value,
+                    unit=revenue.unit,
+                    source_tag=revenue.source_tag,
+                    source_form=revenue.source_form,
+                    filed_date=revenue.filed_date,
+                    is_amended=revenue.is_amended or cost_of_revenue.is_amended,
+                    is_derived=True,
+                    selection_reason="derived_from_revenue_minus_cost_of_revenue",
+                )
+            )
+
+        return derived
+
+    def _derive_total_debt_facts(self, company, fact_models):
+        facts_by_period = self._facts_by_period(fact_models)
+        derived = []
+
+        for (period_type, fiscal_year, fiscal_quarter, period_end), facts in facts_by_period.items():
+            if facts.get("total_debt") is not None:
+                continue
+
+            debt_noncurrent = facts.get("debt_noncurrent")
+            debt_current = facts.get("debt_current")
+            if debt_noncurrent is None and debt_current is None:
+                continue
+
+            total_value = Decimal("0")
+            period_start = None
+            unit = ""
+            filed_date = None
+            source_form = ""
+            source_tag = ""
+            is_amended = False
+
+            for component in (debt_noncurrent, debt_current):
+                if component is None:
+                    continue
+                total_value += component.value
+                period_start = period_start or component.period_start
+                unit = unit or component.unit
+                filed_date = filed_date or component.filed_date
+                source_form = source_form or component.source_form
+                source_tag = source_tag or component.source_tag
+                is_amended = is_amended or component.is_amended
+
+            derived.append(
+                FinancialFact(
+                    company=company,
+                    metric_key="total_debt",
+                    period_type=period_type,
+                    fiscal_year=fiscal_year,
+                    fiscal_quarter=fiscal_quarter,
+                    period_start=period_start,
+                    period_end=period_end,
+                    value=total_value,
+                    unit=unit,
+                    source_tag=source_tag,
+                    source_form=source_form,
+                    filed_date=filed_date,
+                    is_amended=is_amended,
+                    is_derived=True,
+                    selection_reason="derived_from_current_and_noncurrent_debt",
+                )
+            )
+
+        return derived
+
+    def _derive_missing_annual_rollups(self, company, fact_models, *, metric_keys):
+        facts_by_metric_year = defaultdict(dict)
+        for fact in fact_models:
+            if fact.period_type == FinancialFact.PERIOD_ANNUAL:
+                facts_by_metric_year[(fact.metric_key, fact.fiscal_year)]["annual"] = fact
+            elif fact.fiscal_quarter is not None:
+                facts_by_metric_year[(fact.metric_key, fact.fiscal_year)][fact.fiscal_quarter] = fact
+
+        derived = []
+        for metric_key in metric_keys:
+            for (candidate_metric, fiscal_year), facts in facts_by_metric_year.items():
+                if candidate_metric != metric_key:
+                    continue
+                if facts.get("annual") is not None:
+                    continue
+
+                quarters = [facts.get(quarter) for quarter in (1, 2, 3, 4)]
+                if any(fact is None for fact in quarters):
+                    continue
+
+                q1, q2, q3, q4 = quarters
+                derived.append(
+                    FinancialFact(
+                        company=company,
+                        metric_key=metric_key,
+                        period_type=FinancialFact.PERIOD_ANNUAL,
+                        fiscal_year=fiscal_year,
+                        fiscal_quarter=None,
+                        period_start=q1.period_start,
+                        period_end=q4.period_end,
+                        value=sum((fact.value for fact in quarters), Decimal("0")),
+                        unit=q1.unit,
+                        source_tag=q1.source_tag,
+                        source_form=q4.source_form,
+                        filed_date=q4.filed_date,
+                        is_amended=any(fact.is_amended for fact in quarters),
+                        is_derived=True,
+                        selection_reason="derived_annual_from_quarters",
+                    )
+                )
+
+        return derived
+
+    def _facts_by_period(self, fact_models):
+        facts_by_period = {}
+        for fact in fact_models:
+            period_key = (
+                fact.period_type,
+                fact.fiscal_year,
+                fact.fiscal_quarter,
+                fact.period_end,
+            )
+            facts_by_period.setdefault(period_key, {})[fact.metric_key] = fact
+        return facts_by_period
 
     def _build_fact_model(
         self,

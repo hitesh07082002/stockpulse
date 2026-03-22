@@ -78,7 +78,18 @@ export async function* sendChatMessage(ticker, message) {
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    let messageText = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload?.message) {
+        messageText = errorPayload.message;
+      } else if (errorPayload?.error) {
+        messageText = errorPayload.error;
+      }
+    } catch {
+      // Fall back to the generic HTTP error above.
+    }
+    throw new Error(messageText);
   }
 
   const reader = response.body.getReader();

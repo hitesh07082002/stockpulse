@@ -48,6 +48,38 @@ def _latest_annual_fact(company, metric_key):
     ).order_by('-fiscal_year').first()
 
 
+def _annual_growth_percentage(company, metric_key):
+    facts = list(
+        FinancialFact.objects.filter(
+            company=company,
+            metric_key=metric_key,
+            period_type='annual',
+        ).order_by('-fiscal_year')[:2]
+    )
+    if len(facts) < 2:
+        return None
+
+    latest = _safe_number(facts[0].value)
+    previous = _safe_number(facts[1].value)
+    if latest is None or previous in (None, 0):
+        return None
+
+    # Crossing zero produces unusable growth assumptions for a simple 5-year model.
+    if latest <= 0 or previous <= 0:
+        return None
+
+    growth = ((latest - previous) / previous) * 100
+    return round(growth, 1)
+
+
+def _bounded_growth_default(value, default=10.0):
+    if value is None:
+        return default
+
+    # Keep the prefilled assumption sober enough for a 5-year retail-facing DCF.
+    return round(min(max(value, -10.0), 20.0), 1)
+
+
 def _compute_revenue_growth_default(company, snapshot):
     if snapshot and snapshot.revenue_growth_yoy is not None:
         return round(float(snapshot.revenue_growth_yoy) * 100, 1)
@@ -68,6 +100,30 @@ def _compute_revenue_growth_default(company, snapshot):
         return 10.0
 
     return round(((latest - previous) / abs(previous)) * 100, 1)
+
+
+def _compute_earnings_growth_default(company, snapshot):
+    eps_growth = _annual_growth_percentage(company, 'diluted_eps')
+    if eps_growth is not None:
+        return _bounded_growth_default(eps_growth)
+
+    net_income_growth = _annual_growth_percentage(company, 'net_income')
+    if net_income_growth is not None:
+        return _bounded_growth_default(net_income_growth)
+
+    return _bounded_growth_default(_compute_revenue_growth_default(company, snapshot))
+
+
+def _compute_cash_flow_growth_default(company, snapshot):
+    free_cash_flow_growth = _annual_growth_percentage(company, 'free_cash_flow')
+    if free_cash_flow_growth is not None:
+        return _bounded_growth_default(free_cash_flow_growth)
+
+    operating_cash_flow_growth = _annual_growth_percentage(company, 'operating_cash_flow')
+    if operating_cash_flow_growth is not None:
+        return _bounded_growth_default(operating_cash_flow_growth)
+
+    return _bounded_growth_default(_compute_revenue_growth_default(company, snapshot))
 
 
 def _compute_eps_value(company, snapshot):
@@ -230,7 +286,8 @@ def valuation_inputs_view(request, ticker):
     negative_cash_flow = free_cash_flow is not None and free_cash_flow < 0
     shares_outstanding = _safe_number(company.shares_outstanding)
     current_price = _safe_number(company.current_price)
-    growth_rate_default = _compute_revenue_growth_default(company, snapshot)
+    earnings_growth_rate_default = _compute_earnings_growth_default(company, snapshot)
+    cash_flow_growth_rate_default = _compute_cash_flow_growth_default(company, snapshot)
 
     earnings_metric_value = _compute_eps_value(company, snapshot)
     earnings_multiple = _safe_number(snapshot.pe_ratio) if snapshot else None
@@ -269,7 +326,7 @@ def valuation_inputs_view(request, ticker):
         'earnings_mode': {
             'current_metric_label': 'EPS',
             'current_metric_value': earnings_metric_value,
-            'growth_rate_default': growth_rate_default,
+            'growth_rate_default': earnings_growth_rate_default,
             'terminal_multiple_default': earnings_multiple,
             'desired_return_default': 15.0,
             'current_trading_multiple': _safe_number(snapshot.pe_ratio) if snapshot else None,
@@ -277,7 +334,7 @@ def valuation_inputs_view(request, ticker):
         'cash_flow_mode': {
             'current_metric_label': 'FCF Per Share',
             'current_metric_value': cash_flow_metric_value,
-            'growth_rate_default': growth_rate_default,
+            'growth_rate_default': cash_flow_growth_rate_default,
             'terminal_multiple_default': cash_flow_multiple,
             'desired_return_default': 15.0,
             'current_trading_multiple': cash_flow_multiple if cash_flow_metric_value not in (None, 0) else None,

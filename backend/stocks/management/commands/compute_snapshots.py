@@ -14,6 +14,7 @@ SNAPSHOT_INPUT_METRICS = (
     "operating_income",
     "net_income",
     "diluted_eps",
+    "dividends_per_share",
     "operating_cash_flow",
     "capital_expenditures",
     "free_cash_flow",
@@ -137,6 +138,7 @@ class Command(BaseCommand):
         operating_income = self._latest_annual_value(facts_by_metric, "operating_income")
         net_income = self._latest_annual_value(facts_by_metric, "net_income")
         diluted_eps = self._latest_annual_value(facts_by_metric, "diluted_eps")
+        dividends_per_share = self._latest_annual_value(facts_by_metric, "dividends_per_share")
         shareholders_equity = self._latest_annual_value(facts_by_metric, "shareholders_equity")
         total_debt = self._latest_annual_value(facts_by_metric, "total_debt")
         free_cash_flow = self._latest_annual_value(facts_by_metric, "free_cash_flow")
@@ -151,13 +153,17 @@ class Command(BaseCommand):
         if company.current_price is not None and diluted_eps is not None and diluted_eps > 0:
             pe_ratio = company.current_price / diluted_eps
 
+        dividend_yield = None
+        if company.current_price is not None and dividends_per_share is not None and company.current_price > 0:
+            dividend_yield = dividends_per_share / company.current_price
+
         revenue_growth_yoy = None
         if revenue is not None and previous_revenue not in (None, Decimal("0")):
             revenue_growth_yoy = (revenue - previous_revenue) / abs(previous_revenue)
 
         return {
             "pe_ratio": pe_ratio,
-            "dividend_yield": None,
+            "dividend_yield": dividend_yield,
             "revenue_growth_yoy": revenue_growth_yoy,
             "gross_margin": self._safe_divide(gross_profit, revenue),
             "operating_margin": self._safe_divide(operating_income, revenue),

@@ -12,6 +12,7 @@ from stocks.metric_registry import (
 def test_metric_registry_locks_the_v1_metric_set():
     assert set(list_metric_keys()) == {
         "revenue",
+        "cost_of_revenue",
         "gross_profit",
         "operating_income",
         "net_income",
@@ -21,8 +22,11 @@ def test_metric_registry_locks_the_v1_metric_set():
         "free_cash_flow",
         "cash_and_equivalents",
         "total_debt",
+        "debt_current",
+        "debt_noncurrent",
         "shareholders_equity",
         "shares_outstanding",
+        "dividends_per_share",
     }
 
 
@@ -40,6 +44,10 @@ def test_metric_registry_encodes_required_contract_fields():
     diluted_eps = get_metric_definition("diluted_eps")
     assert diluted_eps.metric_class == "per_share"
     assert diluted_eps.allowed_unit_family == "USD/share"
+
+    dividends_per_share = get_metric_definition("dividends_per_share")
+    assert dividends_per_share.metric_class == "per_share"
+    assert dividends_per_share.allowed_unit_family == "USD/share"
 
     free_cash_flow = get_metric_definition("free_cash_flow")
     assert free_cash_flow.metric_class == "derived"

@@ -52,6 +52,48 @@ def test_ingest_companies_supports_csv_override(tmp_path):
     assert company.cik == "123456"
 
 
+@pytest.mark.django_db
+def test_ingest_companies_dedupes_multi_class_rows_by_cik(tmp_path):
+    csv_path = tmp_path / "companies.csv"
+    csv_path.write_text(
+        "ticker,name,sector,industry,cik\n"
+        "GOOG,Alphabet Inc.,Communication Services,Interactive Media & Services,1652044\n"
+        "GOOGL,Alphabet Inc.,Communication Services,Interactive Media & Services,1652044\n"
+        "TEST,Test Corp,Technology,Software,123456\n",
+        encoding="utf-8",
+    )
+
+    call_command("ingest_companies", "--csv", str(csv_path))
+
+    assert Company.objects.count() == 2
+    assert Company.objects.filter(ticker="GOOGL", cik="1652044").exists()
+    assert not Company.objects.filter(ticker="GOOG").exists()
+
+
+@pytest.mark.django_db
+def test_ingest_companies_updates_existing_company_when_cik_matches_new_ticker(tmp_path):
+    Company.objects.create(
+        ticker="FOX",
+        name="Fox Corporation",
+        sector="Communication Services",
+        industry="Broadcasting",
+        cik="1754301",
+    )
+
+    csv_path = tmp_path / "companies.csv"
+    csv_path.write_text(
+        "ticker,name,sector,industry,cik\n"
+        "FOXA,Fox Corporation,Communication Services,Broadcasting,1754301\n",
+        encoding="utf-8",
+    )
+
+    call_command("ingest_companies", "--csv", str(csv_path))
+
+    assert Company.objects.count() == 1
+    assert Company.objects.filter(ticker="FOXA", cik="1754301").exists()
+    assert not Company.objects.filter(ticker="FOX").exists()
+
+
 def _duration_entry(*, value, start, end, fy, fp, form, filed):
     return {
         "val": value,
@@ -270,6 +312,13 @@ class _FakeSecSession:
         raise AssertionError(f"Unexpected SEC URL: {url}")
 
 
+class _ExplodingSession:
+    headers = {}
+
+    def get(self, url, timeout):
+        raise AssertionError(f"Network should not be called in cached rebuild mode: {url}")
+
+
 @pytest.mark.django_db
 def test_ingest_financials_builds_canonical_facts_and_audit_records(monkeypatch):
     payload = _sample_companyfacts_payload()
@@ -353,6 +402,310 @@ def test_ingest_financials_builds_canonical_facts_and_audit_records(monkeypatch)
     assert raw_companyfacts.payload_json == payload
     assert raw_submissions.status == RawSecPayload.STATUS_SUCCESS
     assert raw_submissions.payload_json == submissions_payload
+
+
+@pytest.mark.django_db
+def test_ingest_financials_prefers_latest_framed_periods_within_same_fiscal_year(monkeypatch):
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=60922000000,
+                                start="2023-01-30",
+                                end="2024-01-28",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=130497000000,
+                                start="2024-01-29",
+                                end="2025-01-26",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=215938000000,
+                                start="2025-01-27",
+                                end="2026-01-25",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=26044000000,
+                                start="2024-01-29",
+                                end="2024-04-28",
+                                fy=2026,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2025-05-28",
+                            ),
+                            _duration_entry(
+                                value=44062000000,
+                                start="2025-01-27",
+                                end="2025-04-27",
+                                fy=2026,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2025-05-28",
+                            ),
+                            _duration_entry(
+                                value=56084000000,
+                                start="2024-01-29",
+                                end="2024-07-28",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=30040000000,
+                                start="2024-04-29",
+                                end="2024-07-28",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=90805000000,
+                                start="2025-01-27",
+                                end="2025-07-27",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=46743000000,
+                                start="2025-04-28",
+                                end="2025-07-27",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=147811000000,
+                                start="2025-01-27",
+                                end="2025-10-26",
+                                fy=2026,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2025-11-19",
+                            ),
+                            _duration_entry(
+                                value=57006000000,
+                                start="2025-07-28",
+                                end="2025-10-26",
+                                fy=2026,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2025-11-19",
+                            ),
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="NVDA", name="Nvidia", cik="1045810")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "NVDA", "--force")
+
+    annual = FinancialFact.objects.get(
+        company=company,
+        metric_key="revenue",
+        period_type="annual",
+        fiscal_year=2026,
+    )
+    quarters = list(
+        FinancialFact.objects.filter(
+            company=company,
+            metric_key="revenue",
+            period_type="quarterly",
+            fiscal_year=2026,
+        )
+        .order_by("fiscal_quarter")
+        .values_list("fiscal_quarter", "value", "selection_reason")
+    )
+
+    assert annual.value == Decimal("215938000000")
+    assert quarters == [
+        (1, Decimal("44062000000"), "selected_quarterly_fact"),
+        (2, Decimal("46743000000"), "selected_quarterly_fact"),
+        (3, Decimal("57006000000"), "selected_quarterly_fact"),
+        (4, Decimal("68127000000"), "derived_q4_from_annual"),
+    ]
+
+
+@pytest.mark.django_db
+def test_ingest_financials_derives_gross_profit_total_debt_and_dividends(monkeypatch):
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=1000,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "CostOfRevenue": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=400,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "LongTermDebtNoncurrent": {
+                    "units": {
+                        "USD": [
+                            _instant_entry(
+                                value=200,
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "LongTermDebtCurrent": {
+                    "units": {
+                        "USD": [
+                            _instant_entry(
+                                value=50,
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "CommonStockDividendsPerShareDeclared": {
+                    "units": {
+                        "USD/shares": [
+                            _duration_entry(
+                                value=2.0,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+            }
+        }
+    }
+    submissions_payload = {"filings": {"recent": {"form": ["10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST", "--force")
+
+    gross_profit = FinancialFact.objects.get(
+        company=company,
+        metric_key="gross_profit",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    total_debt = FinancialFact.objects.get(
+        company=company,
+        metric_key="total_debt",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    dividends = FinancialFact.objects.get(
+        company=company,
+        metric_key="dividends_per_share",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+
+    assert gross_profit.value == Decimal("600")
+    assert gross_profit.is_derived is True
+    assert gross_profit.selection_reason == "derived_from_revenue_minus_cost_of_revenue"
+    assert total_debt.value == Decimal("250")
+    assert total_debt.is_derived is True
+    assert total_debt.selection_reason == "derived_from_current_and_noncurrent_debt"
+    assert dividends.value == Decimal("2.0")
+
+
+@pytest.mark.django_db
+def test_ingest_financials_can_rebuild_from_cached_payloads(monkeypatch):
+    payload = _sample_companyfacts_payload()
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+    RawSecPayload.objects.create(
+        company=company,
+        source=RawSecPayload.SOURCE_COMPANYFACTS,
+        status=RawSecPayload.STATUS_SUCCESS,
+        payload_json=payload,
+        retention_note="latest_success",
+    )
+    RawSecPayload.objects.create(
+        company=company,
+        source=RawSecPayload.SOURCE_SUBMISSIONS,
+        status=RawSecPayload.STATUS_SUCCESS,
+        payload_json=submissions_payload,
+        retention_note="latest_success",
+    )
+
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _ExplodingSession(),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST", "--from-cache")
+
+    assert FinancialFact.objects.filter(company=company, metric_key="revenue").exists()
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_SEC).exists()
 
 
 @pytest.mark.django_db
