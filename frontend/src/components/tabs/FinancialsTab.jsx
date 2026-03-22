@@ -340,7 +340,7 @@ function FinancialsTab({ ticker, company }) {
           <h4 className="font-display text-lg font-bold text-text-primary">{selectedLabel}</h4>
           {chartData.length > 0 ? (
             <div className="h-[400px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart
                   data={chartData}
                   margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
