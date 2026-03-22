@@ -106,9 +106,9 @@ function StockDetailPage() {
               <span className="font-display text-3xl font-bold text-text-primary leading-none tracking-tight">
                 {company.ticker}
               </span>
-              {company.price != null && (
+              {company.current_price != null && (
                 <span className="font-data text-2xl font-bold text-text-primary leading-none">
-                  ${formatPrice(company.price)}
+                  ${formatPrice(company.current_price)}
                 </span>
               )}
               {changeValue != null && (
