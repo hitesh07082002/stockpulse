@@ -30,11 +30,11 @@ const COLUMNS = [
   { key: 'ticker', label: 'Ticker', sortable: true },
   { key: 'name', label: 'Company', sortable: true },
   { key: 'sector', label: 'Sector', sortable: true },
-  { key: 'price', label: 'Price', sortable: true, numeric: true },
+  { key: 'current_price', label: 'Price', sortable: true, numeric: true },
   { key: 'market_cap', label: 'Market Cap', sortable: true, numeric: true },
   { key: 'pe_ratio', label: 'P/E', sortable: true, numeric: true },
   { key: 'dividend_yield', label: 'Dividend %', sortable: true, numeric: true },
-  { key: 'profit_margin', label: 'Margin %', sortable: true, numeric: true },
+  { key: 'net_margin', label: 'Net Margin %', sortable: true, numeric: true },
   { key: 'roe', label: 'ROE', sortable: true, numeric: true },
 ];
 
@@ -48,8 +48,8 @@ const INITIAL_FILTERS = {
   market_cap_max: '',
   dividend_yield_min: '',
   dividend_yield_max: '',
-  profit_margin_min: '',
-  profit_margin_max: '',
+  net_margin_min: '',
+  net_margin_max: '',
   roe_min: '',
   roe_max: '',
   revenue_growth_min: '',
@@ -212,7 +212,7 @@ export default function ScreenerPage() {
 
   /* ---- Data ---- */
   const { data, isLoading } = useScreener(appliedFilters);
-  const results = data?.results ?? data ?? [];
+  const results = useMemo(() => data?.results ?? data ?? [], [data]);
 
   /* ---- Client-side sort ---- */
   const sortedResults = useMemo(() => {
@@ -313,10 +313,10 @@ export default function ScreenerPage() {
             {row.sector ?? '--'}
           </span>
         );
-      case 'price':
+      case 'current_price':
         return (
           <span className="font-data text-xs text-text-primary">
-            {formatPrice(row.price)}
+            {formatPrice(row.current_price)}
           </span>
         );
       case 'market_cap':
@@ -337,10 +337,10 @@ export default function ScreenerPage() {
             {formatPercent(row.dividend_yield)}
           </span>
         );
-      case 'profit_margin':
+      case 'net_margin':
         return (
           <span className="font-data text-xs text-text-primary">
-            {formatPercent(row.profit_margin)}
+            {formatPercent(row.net_margin)}
           </span>
         );
       case 'roe':
@@ -434,13 +434,13 @@ export default function ScreenerPage() {
           />
         </FilterGroup>
 
-        {/* Profit Margin */}
-        <FilterGroup label="Profit Margin (%)">
+        {/* Net Margin */}
+        <FilterGroup label="Net Margin (%)">
           <MinMaxInputs
-            minValue={filters.profit_margin_min}
-            maxValue={filters.profit_margin_max}
-            onMinChange={(v) => updateFilter('profit_margin_min', v)}
-            onMaxChange={(v) => updateFilter('profit_margin_max', v)}
+            minValue={filters.net_margin_min}
+            maxValue={filters.net_margin_max}
+            onMinChange={(v) => updateFilter('net_margin_min', v)}
+            onMaxChange={(v) => updateFilter('net_margin_max', v)}
           />
         </FilterGroup>
 

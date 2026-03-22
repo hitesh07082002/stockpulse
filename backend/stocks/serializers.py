@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Company, FinancialFact, StockMetrics
+from .models import Company, FinancialFact, MetricSnapshot
 
 
 class CompanyListSerializer(serializers.ModelSerializer):
@@ -9,47 +9,59 @@ class CompanyListSerializer(serializers.ModelSerializer):
 
 
 class CompanyDetailSerializer(serializers.ModelSerializer):
-    pe_ratio = serializers.DecimalField(
-        source='metrics.pe_ratio', max_digits=10, decimal_places=2,
-        read_only=True, allow_null=True, default=None,
-    )
-    dividend_yield = serializers.DecimalField(
-        source='metrics.dividend_yield', max_digits=6, decimal_places=4,
-        read_only=True, allow_null=True, default=None,
-    )
+    pe_ratio = serializers.SerializerMethodField()
+    dividend_yield = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
         fields = [
-            'ticker', 'name', 'cik', 'sector', 'industry', 'description',
+            'ticker', 'name', 'cik', 'exchange', 'sector', 'industry', 'description', 'website',
             'current_price', 'market_cap', 'week_52_high', 'week_52_low',
-            'shares_outstanding', 'price_updated_at',
+            'shares_outstanding', 'quote_updated_at',
             'pe_ratio', 'dividend_yield',
         ]
+
+    def _snapshot(self, obj):
+        try:
+            return obj.metrics
+        except MetricSnapshot.DoesNotExist:
+            return None
+
+    def get_pe_ratio(self, obj):
+        snapshot = self._snapshot(obj)
+        return snapshot.pe_ratio if snapshot else None
+
+    def get_dividend_yield(self, obj):
+        snapshot = self._snapshot(obj)
+        return snapshot.dividend_yield if snapshot else None
 
 
 class FinancialFactSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinancialFact
-        fields = ['metric', 'period_type', 'fiscal_year', 'fiscal_quarter',
-                  'period_end_date', 'value', 'unit']
+        fields = [
+            'metric_key', 'period_type', 'fiscal_year', 'fiscal_quarter',
+            'period_start', 'period_end', 'value', 'unit',
+            'source_tag', 'source_form', 'filed_date',
+            'is_amended', 'is_derived', 'selection_reason',
+        ]
 
 
-class StockMetricsSerializer(serializers.ModelSerializer):
+class MetricSnapshotSerializer(serializers.ModelSerializer):
     ticker = serializers.CharField(source='company.ticker')
     name = serializers.CharField(source='company.name')
     sector = serializers.CharField(source='company.sector')
     current_price = serializers.DecimalField(
-        source='company.current_price', max_digits=12, decimal_places=2
+        source='company.current_price', max_digits=12, decimal_places=2, allow_null=True
     )
-    market_cap = serializers.IntegerField(source='company.market_cap')
+    market_cap = serializers.IntegerField(source='company.market_cap', allow_null=True)
 
     class Meta:
-        model = StockMetrics
+        model = MetricSnapshot
         fields = [
             'ticker', 'name', 'sector', 'current_price', 'market_cap',
-            'pe_ratio', 'dividend_yield', 'revenue_growth_yoy', 'profit_margin',
-            'gross_margin', 'operating_margin', 'roe', 'debt_to_equity',
+            'pe_ratio', 'dividend_yield', 'revenue_growth_yoy',
+            'gross_margin', 'operating_margin', 'net_margin', 'roe', 'debt_to_equity',
             'free_cash_flow',
         ]
 

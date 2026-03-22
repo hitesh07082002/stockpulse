@@ -1,34 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { usePrices } from '../../hooks/useStockData';
-
-/* ────────────────────────────────────────────
-   Constants
-   ──────────────────────────────────────────── */
 
 const RANGES = ['1M', '3M', '6M', '1Y', '5Y', 'MAX'];
 
-/* Hardcoded color values — lightweight-charts cannot resolve CSS variables */
 const COLORS = {
   bgTransparent: 'transparent',
   textSecondaryDark: '#A1A1AA',
-  textSecondaryLight: '#52525B',
   gridLine: '#27272A',
-  up: '#4ADE80',
-  down: '#F87171',
-  volumeTeal: 'rgba(20, 184, 166, 0.3)',
-  volumeUp: 'rgba(74, 222, 128, 0.3)',
-  volumeDown: 'rgba(248, 113, 113, 0.3)',
+  accent: '#14B8A6',
+  volumeUp: 'rgba(20, 184, 166, 0.32)',
+  volumeDown: 'rgba(244, 63, 94, 0.24)',
+  warningBg: 'rgba(245, 158, 11, 0.12)',
+  warningText: '#F59E0B',
 };
-
-/* ────────────────────────────────────────────
-   Helpers
-   ──────────────────────────────────────────── */
 
 function resolveTextColor() {
   if (typeof window === 'undefined') return COLORS.textSecondaryDark;
   const value = getComputedStyle(document.documentElement)
-    .getPropertyValue('--text-secondary')
+    .getPropertyValue('--color-text-secondary')
     .trim();
   return value || COLORS.textSecondaryDark;
 }
@@ -41,42 +31,28 @@ function formatStaleness(updatedAt) {
   return `Updated ${hours} hour${hours === 1 ? '' : 's'} ago`;
 }
 
-/* ────────────────────────────────────────────
-   Skeleton placeholder
-   ──────────────────────────────────────────── */
-
 function ChartSkeleton() {
-  return (
-    <div className="w-full h-[500px] skeleton rounded-lg" />
-  );
+  return <div className="h-[500px] w-full rounded-lg skeleton" />;
 }
 
-/* ────────────────────────────────────────────
-   PriceTab
-   ──────────────────────────────────────────── */
-
-function PriceTab({ ticker, company }) {
+function PriceTab({ ticker }) {
   const [selectedRange, setSelectedRange] = useState('1Y');
   const containerRef = useRef(null);
   const chartRef = useRef(null);
-  const candleSeriesRef = useRef(null);
+  const priceSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
 
   const { data, isLoading, isError, error } = usePrices(ticker, selectedRange);
 
-  /* ---- Create chart once data is available ---- */
   useEffect(() => {
-    if (!containerRef.current || isLoading) return;
-
-    const textColor = resolveTextColor();
-    const width = containerRef.current.clientWidth || 300;
+    if (!containerRef.current || isLoading) return undefined;
 
     const chart = createChart(containerRef.current, {
-      width,
+      width: containerRef.current.clientWidth || 300,
       height: 500,
       layout: {
         background: { color: COLORS.bgTransparent },
-        textColor: textColor,
+        textColor: resolveTextColor(),
       },
       grid: {
         vertLines: { color: COLORS.gridLine },
@@ -89,24 +65,21 @@ function PriceTab({ ticker, company }) {
         borderColor: COLORS.gridLine,
       },
       crosshair: {
-        mode: 0, // Normal crosshair
+        mode: 0,
       },
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: COLORS.up,
-      downColor: COLORS.down,
-      wickUpColor: COLORS.up,
-      wickDownColor: COLORS.down,
-      borderUpColor: COLORS.up,
-      borderDownColor: COLORS.down,
+    const priceSeries = chart.addSeries(LineSeries, {
+      color: COLORS.accent,
+      lineWidth: 2.5,
+      priceLineVisible: false,
+      crosshairMarkerRadius: 4,
+      crosshairMarkerBorderColor: COLORS.accent,
+      crosshairMarkerBackgroundColor: '#09090B',
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: COLORS.volumeTeal,
-      priceFormat: {
-        type: 'volume',
-      },
+      priceFormat: { type: 'volume' },
       priceScaleId: '',
     });
 
@@ -118,65 +91,64 @@ function PriceTab({ ticker, company }) {
     });
 
     chartRef.current = chart;
-    candleSeriesRef.current = candleSeries;
+    priceSeriesRef.current = priceSeries;
     volumeSeriesRef.current = volumeSeries;
 
     return () => {
       chart.remove();
       chartRef.current = null;
-      candleSeriesRef.current = null;
+      priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
   }, [isLoading]);
 
-  /* ---- Handle window resize ---- */
   useEffect(() => {
     const chart = chartRef.current;
     const container = containerRef.current;
-    if (!chart || !container) return;
+    if (!chart || !container) return undefined;
 
     const handleResize = () => {
-      chart.applyOptions({ width: container.clientWidth });
+      chart.applyOptions({ width: container.clientWidth || 300 });
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* ---- Update series data when data changes ---- */
   useEffect(() => {
-    const candleSeries = candleSeriesRef.current;
-    const volumeSeries = volumeSeriesRef.current;
     const chart = chartRef.current;
-    if (!candleSeries || !volumeSeries || !chart) return;
+    const priceSeries = priceSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    if (!chart || !priceSeries || !volumeSeries) return;
 
     const prices = data?.data ?? data?.prices ?? [];
     if (prices.length === 0) {
-      candleSeries.setData([]);
+      priceSeries.setData([]);
       volumeSeries.setData([]);
       return;
     }
 
-    const candles = prices.map((d) => ({
-      time: d.date,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }));
+    priceSeries.setData(
+      prices.map((point) => ({
+        time: point.date,
+        value: Number(point.adjusted_close ?? point.close),
+      })),
+    );
 
-    const volumes = prices.map((d) => ({
-      time: d.date,
-      value: d.volume,
-      color: d.close >= d.open ? COLORS.volumeUp : COLORS.volumeDown,
-    }));
+    volumeSeries.setData(
+      prices.map((point) => ({
+        time: point.date,
+        value: Number(point.volume ?? 0),
+        color:
+          Number(point.adjusted_close ?? point.close) >= Number(point.open ?? point.close)
+            ? COLORS.volumeUp
+            : COLORS.volumeDown,
+      })),
+    );
 
-    candleSeries.setData(candles);
-    volumeSeries.setData(volumes);
     chart.timeScale().fitContent();
   }, [data]);
 
-  /* ---- Staleness message ---- */
   const stalenessMsg =
     data?.stale && data?.updated_at
       ? formatStaleness(data.updated_at)
@@ -186,59 +158,52 @@ function PriceTab({ ticker, company }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ---- Timeframe Selector ---- */}
-      <div className="flex gap-2 mb-4">
-        {RANGES.map((range) => (
-          <button
-            key={range}
-            onClick={() => setSelectedRange(range)}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition ${
-              selectedRange === range
-                ? 'bg-accent text-text-inverse border-accent'
-                : 'border-border text-text-secondary hover:bg-elevated'
-            }`}
-          >
-            {range}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {RANGES.map((range) => (
+            <button
+              key={range}
+              type="button"
+              onClick={() => setSelectedRange(range)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition cursor-pointer ${
+                selectedRange === range
+                  ? 'border-accent bg-accent text-text-inverse'
+                  : 'border-border text-text-secondary hover:bg-elevated'
+              }`}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
+            Adjusted close
+          </span>
+          {stalenessMsg && (
+            <span
+              className="rounded-full px-3 py-1 text-xs font-medium"
+              style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
+            >
+              {stalenessMsg}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ---- Staleness Badge ---- */}
-      {stalenessMsg && (
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#F59E0B]/10 text-[#F59E0B] rounded-full text-sm mt-2">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="shrink-0"
-          >
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          <span>{stalenessMsg}</span>
-        </div>
-      )}
-
-      {/* ---- Chart Area ---- */}
       {isLoading && <ChartSkeleton />}
 
       {isError && (
-        <div className="text-center py-12 text-error">
+        <div className="py-12 text-center text-error">
           Failed to load price data
           {error?.message ? `: ${error.message}` : '.'}
         </div>
       )}
 
-      {!isLoading && (
+      {!isLoading && !isError && (
         <div
           ref={containerRef}
-          className="w-full h-[500px] rounded-lg overflow-hidden"
+          className="h-[500px] w-full overflow-hidden rounded-lg"
         />
       )}
     </div>

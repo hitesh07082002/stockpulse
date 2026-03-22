@@ -4,7 +4,7 @@ import {
   fetchCompany,
   fetchFinancials,
   fetchPrices,
-  fetchDCFInputs,
+  fetchValuationInputs,
   fetchScreener,
 } from '../utils/api';
 
@@ -26,10 +26,10 @@ export function useCompany(ticker) {
 }
 
 export function useFinancials(ticker, options = {}) {
-  const { metric, period_type } = options;
+  const { metrics, period_type } = options;
   return useQuery({
-    queryKey: ['financials', ticker, { metric, period_type }],
-    queryFn: () => fetchFinancials(ticker, { metric, period_type }),
+    queryKey: ['financials', ticker, { metrics, period_type }],
+    queryFn: () => fetchFinancials(ticker, { metrics, period_type }),
     enabled: !!ticker,
   });
 }
@@ -42,10 +42,10 @@ export function usePrices(ticker, range) {
   });
 }
 
-export function useDCFInputs(ticker) {
+export function useValuationInputs(ticker) {
   return useQuery({
-    queryKey: ['dcf-inputs', ticker],
-    queryFn: () => fetchDCFInputs(ticker),
+    queryKey: ['valuation-inputs', ticker],
+    queryFn: () => fetchValuationInputs(ticker),
     enabled: !!ticker,
   });
 }

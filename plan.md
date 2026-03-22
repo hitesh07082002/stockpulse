@@ -1,540 +1,659 @@
-# StockPulse V1 — Product & Project Plan
+# StockPulse V1 — Scratch-Build Plan
 
-> An AI-powered US stock analysis platform. Search any S&P 500 stock, explore 30 years of financial data across 10+ interactive charts, calculate fair value with a DCF model, discover stocks with a powerful screener, and ask an AI copilot anything about a company's financials.
->
-> **Pitch**: *"I built an AI-powered stock analysis platform that serves 30 years of SEC financial data with natural language insights — what Qualtrim charges $30/month for, using only free government data and Claude API."*
+**Prototype:** v1.0.0
+**Date:** Mar 22, 2026
+**Status:** IN_PROGRESS
+**Priority:** P0 — Source-of-truth rewrite plan
+**Depends on:** [DESIGN.md](DESIGN.md)
 
----
-
-## Project Setup
-
-- **Repo:** https://github.com/hitesh07082002/stockpulse (public)
-- **Design system:** [DESIGN.md](DESIGN.md) — typography, colors, spacing, layout, motion all locked in
-- **Hosting:** DigitalOcean ($200 credits) — App Platform + Managed PostgreSQL
-- **Domain:** TBD — will purchase (stockpulse.dev / stockpulse.app / getstockpulse.com)
-- **Status:** Architecture review complete — ready to implement
+StockPulse V1 is a public-first stock analysis product for S&P 500 companies with optional user accounts. The rewrite should optimize for trust, speed, and clarity: search a company, inspect normalized financial history, check price and valuation context, and ask grounded AI questions. This document replaces the earlier incremental-cleanup plan with a scratch-build sequence.
 
 ---
 
-## What Sets This Apart
+## 1.0 Locked Decisions
 
-1. **AI Financial Copilot** — per-stock natural language Q&A grounded in real SEC filing data. Structured financial data + smart pruning + honest framing via Claude Sonnet. The AI interprets numerical trends and cites specific data points — not a generic chatbot wrapper.
-2. **30 Years of Real Data** — SEC EDGAR XBRL pipeline ingests, normalizes, and serves actual financial data for S&P 500 companies. Idempotent, resumable ingestion with progress tracking. Messy real-world data engineering, not mock data.
-3. **Production Polish** — Dark mode default, loading skeletons, responsive design, custom domain, SSL, error handling, rate limiting, graceful degradation when upstream data sources are unavailable.
+**Status:** DONE
 
----
+These decisions are resolved and should not be reopened during the rebuild unless the product itself changes.
 
-## V1 Features (6 Core)
-
-### 1. Stock Search & Company Profile
-- Typeahead search across ~500 S&P 500 companies
-- Company overview: name, sector, market cap, price, 52-week range, description
-- **Data**: SEC EDGAR (company info) + yfinance (price/market cap, cached)
-
-### 2. Financial Analysis Dashboard (Hero Feature)
-- 10+ interactive charts: Revenue, Net Income, EPS, FCF, EBITDA, Gross/Operating/Net Margins, Total Debt, Debt-to-Equity, ROE, Cash & Equivalents
-- Toggle quarterly / annual view
-- 30+ years of historical data from SEC EDGAR XBRL
-- **Data**: SEC EDGAR (`data.sec.gov/api/xbrl/companyfacts/`)
-
-### 3. Interactive Price Chart
-- Candlestick/line chart with volume bars
-- Timeframe selector (1M/3M/6M/1Y/5Y/MAX)
-- 50 & 200 day SMA overlays
-- Staleness badge when data is older than 15 minutes
-- **Data**: yfinance (proxied through backend, cached)
-
-### 4. DCF Calculator
-- Auto-populated with computed FCF (Operating Cash Flow − CapEx) from SEC filings
-- User adjusts: growth rate, WACC (6-15%), terminal growth rate (1-4%), projection years (3-10)
-- Output: fair value per share, upside/downside %, sensitivity heatmap
-- Sector warnings for Financials/REITs where DCF is less applicable
-- Handles negative FCF gracefully with warning banner
-- **Data**: SEC EDGAR (computed FCF) + user inputs
-
-### 5. Stock Screener
-- Filter by: market cap, P/E, dividend yield, revenue growth %, profit margin, sector, ROE, debt-to-equity
-- Sortable results table with click-through to stock detail
-- Pre-computed `StockMetrics` table updated daily
-- **Data**: SEC EDGAR + yfinance
-
-### 6. AI Financial Copilot (The Differentiator)
-- Per-stock chat interface: "Ask about this company's financials"
-- Context strategy: last 10 years annual + last 8 quarters of normalized metrics (~2,000-3,000 tokens)
-- System prompt frames AI as interpreting numerical trends, not citing filing text
-- Example queries:
-  - "Why did revenue drop in 2020?"
-  - "Is this stock overvalued based on its historical P/E?"
-  - "Compare this company's margins to the sector average"
-  - "Summarize the key financial trends over the last 5 years"
-- Rate limiting: 50 queries/day per session token, 3 req/min per IP, $5/day hard cap on Anthropic dashboard
-- Model: Claude Sonnet for quality financial analysis
-- Streaming responses (SSE) for snappy UX
-- **Data**: Normalized financial data (10yr window) + current price + pre-computed metrics
+**Dimensions:**
+- 1.1 DONE V1 is public-first for browsing. Search, company pages, financials, price data, valuation, and screener remain accessible without login.
+- 1.2 DONE V1 includes authentication: Google sign-in as the primary path plus email/password fallback.
+- 1.3 DONE Launch coverage is the S&P 500. Development and early verification use a smaller seed dataset of 25 companies until normalization and caching are stable.
+- 1.4 DONE V1 background work runs as Django management commands on a single scheduled worker. Celery and Redis are not part of V1 unless one worker can no longer meet the V1 SLAs of quote refresh within 15 minutes and nightly data jobs within 60 minutes, with misses observed twice in normal operation, or durable user-triggered async jobs become a real product need.
+- 1.5 DONE V1 uses the repo's current runtime baseline: Django 6 + Django REST Framework + PostgreSQL 16 on the backend, React 19 + React Router 7 + TanStack Query 5 + Tailwind 4 token layer on the frontend.
+- 1.5.1 DONE V1 keeps two charting tools on purpose: `Recharts` for Financials and DCF visuals, and `lightweight-charts` for the Price tab.
+- 1.6 DONE Dark mode is the canonical launch theme. Light mode is polish work and not a launch blocker.
+- 1.7 DONE Existing implementation details are reference material only. The rewrite does not preserve current component boundaries, endpoint names, or internal abstractions unless they still earn their keep.
 
 ---
 
-## Authentication
+## 2.0 Product Scope
 
-### Core: Email/Password + Google Sign-In
+**Status:** DONE
 
-```
-Registration: POST /api/auth/register/   { email, password, name }
-Login:        POST /api/auth/login/      { email, password } → { access, refresh }
-Google:       POST /api/auth/google/     { google_token } → { access, refresh }
-Refresh:      POST /api/auth/refresh/    { refresh } → { access }
-```
+StockPulse V1 is a stock research tool, not a brokerage app, social feed, or portfolio manager. The value proposition is trustworthy financial context from SEC data, not feature breadth.
 
-- Django built-in User model + djangorestframework-simplejwt for JWT
-- Google OAuth via django-allauth (social login)
-- **JWT stored in httpOnly cookies** (not localStorage) — CSRF protection via Django middleware
-- Frontend: login/register modal (not a separate page), auth context provider
-- AI copilot: 5 free queries/day unauthenticated (IP-based), 50/day authenticated (per-user)
-- After free limit: "Sign in for 45 more free queries today"
-- All other endpoints (financials, prices, screener) remain public — no login required to browse data
+### 2.1 Core Pages
+
+**Status:** DONE
+
+**Dimensions:**
+- 2.1.1 DONE `/` is a tool-first landing page with search, a short trust statement, and quick entry points into coverage.
+- 2.1.2 DONE `/stock/:ticker` is the hero page with overview, financials, price, valuation, and AI tabs.
+- 2.1.3 DONE `/screener` is part of V1.
+- 2.1.4 DONE `/about` explains methodology, data sources, and system architecture in plain language.
+
+### 2.2 Core Features
+
+**Status:** DONE
+
+**Dimensions:**
+- 2.2.1 DONE Search and discovery across the S&P 500.
+- 2.2.2 DONE Historical financial dashboard built from normalized SEC facts.
+- 2.2.3 DONE Cached price chart and quote freshness signaling.
+- 2.2.4 DONE DCF valuation calculator modeled after Qualtrim's serious-but-approachable workflow, with sector warnings and missing-data guardrails.
+- 2.2.5 DONE Filterable screener using precomputed metrics and a focused V1 filter set.
+- 2.2.6 DONE Per-company AI copilot grounded only in structured StockPulse data.
+
+### 2.3 Explicitly Out of Scope for V1
+
+**Status:** DONE
+
+**Dimensions:**
+- 2.3.1 DONE Watchlists, saved portfolios, and saved chats are out of V1 even though accounts exist.
+- 2.3.2 DONE Real-time streaming quotes or WebSocket infrastructure.
+- 2.3.3 DONE News feeds, earnings calendars, and macro dashboards.
+- 2.3.4 DONE Cross-company RAG, embeddings, pgvector, and document search.
+- 2.3.5 DONE Personalized recommendations or brokerage-style alerts.
 
 ---
 
-## NOT in V1 (Planned V2)
-- Portfolio tracker & watchlists
-- Real-time WebSocket prices (Django Channels)
-- News feed & earnings calendar (Finnhub)
-- Macro dashboard (FRED API)
-- RAG pipeline with pgvector for cross-company AI analysis
-- Dynamic context pruning (parse user question to select relevant metrics/timeframe)
+## 3.0 User Experience Contract
+
+**Status:** DONE
+
+The primary user journey is simple and fast:
+
+1. Land on the homepage and search a company.
+2. Open the stock detail page and understand the business in under 60 seconds.
+3. Inspect historical financial trends, current price context, and valuation.
+4. Ask the AI copilot a company-specific question grounded in the same normalized data shown in the UI.
+
+### 3.1 Landing Page
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.1.1 DONE No marketing hero and no feature-grid landing page.
+- 3.1.2 DONE Search is the dominant action.
+- 3.1.3 DONE Quick picks and trust cues replace live market-movers scope for V1.
+
+### 3.2 Stock Detail Page
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.2.1 DONE Persistent company header with ticker, company name, sector, quote, and freshness badge.
+- 3.2.2 DONE Tabs: Overview, Financials, Price, Valuation, AI.
+- 3.2.3 DONE Every tab must render sensible loading, empty, stale, and error states.
+- 3.2.4 DONE The Valuation tab pre-fills core DCF assumptions from company data but keeps the major drivers editable.
+
+### 3.3 AI Access Policy
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.3.1 DONE AI is visible to all users.
+- 3.3.2 DONE Anonymous users get 10 prompts per day per signed session key, with a soft IP backstop.
+- 3.3.3 DONE Authenticated users get 50 prompts per day per account.
+- 3.3.4 DONE A hard global daily budget cap, configured by env var, protects spend if usage spikes.
+- 3.3.5 DONE After the anonymous quota is exhausted, the UI offers sign-in for the 50-prompt authenticated allowance that day.
+- 3.3.6 DONE Anonymous AI identity is issued as a signed `anon_ai_id` cookie on first copilot use, rotates every 30 days, and is reissued if missing or invalid.
+- 3.3.7 DONE A short-window burst limit of 3 prompts per minute per IP applies alongside the daily quotas.
+- 3.3.8 DONE Global AI spend is enforced through database-backed daily budget accounting, not by checking an external dashboard.
+- 3.3.9 DONE When the daily cap is hit, new AI requests are rejected immediately with a clear over-budget product state until the next daily window.
+
+### 3.4 Authentication UX
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.4.1 DONE Sign-in entry points exist in the global header and AI tab.
+- 3.4.2 DONE Authentication uses modal or drawer flows, not separate marketing-heavy auth pages.
+- 3.4.3 DONE Logged-out users can still browse the whole product.
+- 3.4.4 DONE Logged-in state is persistent across refresh via secure cookie-based auth.
+- 3.4.5 DONE Google sign-in is the primary visible auth action in V1, while email/password remains available as a secondary fallback path.
+
+### 3.5 Screener Contract
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.5.1 DONE V1 screener supports a focused filter set: sector, industry, market cap, PE, revenue growth, gross margin, operating margin, debt_to_equity, and a positive free-cash-flow toggle.
+- 3.5.2 DONE V1 screener uses a curated default results table and sortable columns rather than a fully customizable terminal-style layout.
+- 3.5.3 DONE Saved screens, custom column builders, and complex boolean filter groups are out of V1.
+
+### 3.6 Valuation Contract
+
+**Status:** DONE
+
+**Dimensions:**
+- 3.6.1 DONE The valuation tab follows a Qualtrim-like workflow with a toggle between `Earnings` mode and `Cash Flow` mode.
+- 3.6.2 DONE Each mode uses three primary user-entered assumptions: growth rate, appropriate terminal multiple, and desired return.
+- 3.6.3 DONE The current metric is prefilled from canonical data when available, but remains editable, so the calculator effectively supports three or four inputs.
+- 3.6.4 DONE `Earnings` mode centers on EPS-style inputs and a projected earnings multiple outcome.
+- 3.6.5 DONE `Cash Flow` mode centers on free-cash-flow-per-share inputs and a projected cash-flow multiple outcome.
+- 3.6.6 DONE The primary valuation visual is a 5-year projection chart with summary result cards above it.
+- 3.6.7 DONE Sensitivity heatmaps, spreadsheet-grade scenario trees, saved models, and advanced dilution modeling are out of V1.
 
 ---
 
-## Architecture
+## 4.0 Data Model
 
-### Database Schema (4 models)
+**Status:** DONE
 
-```
+The rewrite keeps the schema compact and biased toward deterministic read performance.
+
+```text
 Company
-├── cik (CharField, unique)           # SEC identifier
-├── ticker (CharField, unique, indexed)
+├── cik (unique)
+├── ticker (unique, indexed)
 ├── name, sector, industry, description
-├── current_price (Decimal, cached)   # from yfinance
-├── market_cap (BigInt, cached)
-├── week_52_high/low, shares_outstanding
-├── price_updated_at
-├── raw_facts_json (JSONField)        # full SEC response for AI context
+├── exchange, website (optional)
+├── current_price, market_cap, shares_outstanding
+├── week_52_high, week_52_low
+├── quote_updated_at
 └── facts_updated_at
 
 FinancialFact
-├── company (FK → Company)
-├── metric (CharField, indexed)       # 'revenue', 'net_income', etc.
-├── period_type ('annual'/'quarterly')
+├── company (FK)
+├── metric_key
+├── period_type ('annual' | 'quarterly')
 ├── fiscal_year, fiscal_quarter
-├── period_end_date
-├── value (Decimal 20,2)
-├── unit, form_type, filed_date
-└── unique_together: [company, metric, period_type, fiscal_year, fiscal_quarter]
+├── period_start, period_end
+├── value
+├── unit
+├── source_tag
+├── source_form
+├── filed_date
+├── is_amended
+├── is_derived
+└── selection_reason
 
-StockMetrics
-├── company (OneToOne → Company)
+MetricSnapshot
+├── company (OneToOne)
 ├── pe_ratio, dividend_yield
-├── revenue_growth_yoy, profit_margin
-├── gross_margin, operating_margin
-├── roe, debt_to_equity, free_cash_flow
+├── revenue_growth_yoy
+├── gross_margin, operating_margin, net_margin
+├── roe, debt_to_equity
+├── free_cash_flow
 └── computed_at
 
-IngestionLog
-├── company (FK → Company)
-├── source ('sec_edgar' / 'yfinance')
-├── status ('success' / 'failed' / 'in_progress')
-├── error_message (nullable)
-├── records_created (int)
-├── started_at, completed_at
-└── Viewable in Django Admin
+PriceCache
+├── company (FK)
+├── range_key ('1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX')
+├── data_json
+├── sampling_granularity ('daily' | 'weekly' | 'monthly')
+├── stale
+└── fetched_at
+
+IngestionRun
+├── company (nullable FK)
+├── source ('companies' | 'sec' | 'prices' | 'snapshots')
+├── status ('in_progress' | 'success' | 'failed')
+├── details_json
+├── started_at
+└── completed_at
+
+RawSecPayload
+├── company (FK)
+├── source ('companyfacts' | 'submissions')
+├── status ('success' | 'failed')
+├── payload_json
+├── fetched_at
+└── retention_note
+
+AIUsageCounter
+├── usage_key_hash
+├── user (nullable FK to auth user)
+├── day (America/New_York calendar day)
+├── request_count
+└── updated_at
+
+AIBudgetDay
+├── day (America/New_York calendar day)
+├── request_count
+├── reserved_cost_usd
+├── actual_cost_usd
+├── hard_stop_triggered_at
+└── updated_at
 ```
 
-### XBRL Normalization
-
-Priority-ordered Python dict mapping our metric names to SEC XBRL tags:
-
-```
-XBRL_METRIC_MAP = {
-    'revenue': ['Revenues', 'RevenueFromContractWithCustomer...', 'SalesRevenueNet', ...],
-    'net_income': ['NetIncomeLoss', 'NetIncomeLossAvailableToCommon...', ...],
-    'eps_diluted': ['EarningsPerShareDiluted', 'EarningsPerShareBasic'],
-    'free_cash_flow': COMPUTED (operating_cash_flow - capex),
-    ... (~15 metrics total)
-}
-```
-
-Graceful gaps: if no XBRL tag matches for a company, store NULL, show "Data not available" in UI.
-
-### API Endpoints
-
-```
-GET  /api/companies/                         → List (search, sector filter, pagination)
-GET  /api/companies/{ticker}/                → Detail (includes cached price data)
-GET  /api/companies/{ticker}/financials/     → Financial data
-     ?metric=revenue,net_income              → Filter by metric(s)
-     ?period_type=annual                     → annual or quarterly
-     ?start_year=2000                        → Filter by year range
-GET  /api/companies/{ticker}/prices/         → Price history (proxied yfinance, cached)
-     ?range=1M|3M|6M|1Y|5Y|MAX              → Timeframe
-GET  /api/companies/{ticker}/dcf-inputs/     → FCF, growth rate, shares outstanding, sector warning
-GET  /api/screener/                          → Filterable stock list
-     ?sector=Technology                      → Filter by sector
-     ?pe_min=5&pe_max=25                     → Range filters
-     ?sort=market_cap&order=desc             → Sorting
-     ?page=1&page_size=25                    → Pagination
-POST /api/companies/{ticker}/chat/           → AI chat (streaming SSE)
-     { "message": "Why did revenue drop?" }
-```
-
-### Data Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Management Commands                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. ingest_companies                                             │
-│     ├── Fetch S&P 500 list (hardcoded CSV)                       │
-│     └── Create/update Company records                            │
-│                                                                  │
-│  2. ingest_financials                                            │
-│     ├── For each Company (skip if recent IngestionLog success):  │
-│     │   ├── Create IngestionLog (status=in_progress)             │
-│     │   ├── GET data.sec.gov/api/xbrl/companyfacts/{CIK}        │
-│     │   ├── Rate limit: 10 req/sec (SEC policy)                  │
-│     │   ├── Store raw JSON in Company.raw_facts_json             │
-│     │   ├── Parse XBRL → map to our metrics via XBRL_METRIC_MAP │
-│     │   ├── Upsert FinancialFact records                         │
-│     │   └── Update IngestionLog (status=success/failed)          │
-│     ├── --force: re-ingest even if recent success                │
-│     ├── --ticker AAPL: ingest single company                     │
-│     └── Retry: SEC 429 → exponential backoff (1s, 2s, 4s)       │
-│                                                                  │
-│  3. update_prices                                                │
-│     ├── For each Company:                                        │
-│     │   ├── Fetch current price via yfinance                     │
-│     │   └── Update cached fields + price_updated_at              │
-│     └── On failure: keep stale data, log error                   │
-│                                                                  │
-│  4. compute_metrics                                              │
-│     ├── For each Company:                                        │
-│     │   ├── Query latest FinancialFacts + cached price           │
-│     │   ├── Compute P/E, margins, growth, ROE, etc.              │
-│     │   └── Upsert StockMetrics record                           │
-│     └── Handles division by zero, missing data → NULL            │
-│                                                                  │
-│  Cron schedule:                                                  │
-│  ├── ingest_financials: weekly (SEC data updates quarterly)      │
-│  ├── update_prices: daily (during market hours)                  │
-│  └── compute_metrics: daily (after update_prices)                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### AI Copilot Architecture
-
-```
-POST /api/companies/{ticker}/chat/
-│
-├── Rate limit check (IP: 3/min + Session: 50/day)
-│   └── If exceeded → 429 with friendly message
-│
-├── Load company context (fixed 10-year window):
-│   ├── Company basic info (name, sector, description)
-│   ├── Current price + market cap
-│   ├── Last 10 years annual data (~150 data points)
-│   ├── Last 8 quarters (~120 data points)
-│   └── Pre-computed metrics (P/E, margins, etc.)
-│
-├── Build system prompt:
-│   ├── "You are a financial analyst. Analyze the data provided."
-│   ├── "Cite specific numbers from the data."
-│   ├── "You are interpreting numerical trends, not quoting filings."
-│   └── Inject ~2,000-3,000 tokens of structured financial data
-│
-├── Send to Claude Sonnet (streaming):
-│   ├── anthropic.messages.create(stream=True)
-│   └── max_tokens: 1024
-│
-└── StreamingHttpResponse (SSE format)
-    └── yield each chunk as SSE data event
-```
-
-### yfinance Fallback Strategy
-
-```
-Frontend requests price data
-         │
-         ▼
-Is cached data fresh? (price_updated_at < 15 min)
-    │ YES           │ NO
-    ▼               ▼
-Serve cache    Try yfinance
-                    │
-             ┌──────┴──────┐
-             │ Success?    │
-             │ YES    NO   │
-             ▼        ▼
-        Update    Serve STALE
-        cache     cache + badge
-        + serve   "Updated Xh ago"
-
-Cache TTLs:
-  Current price/quote:    15 min
-  Price chart (daily):    4 hours
-  Price chart (weekly+):  24 hours
-```
+**Dimensions:**
+- 4.1 DONE `FinancialFact` is the canonical normalized layer used by charts, screener metrics, valuation, and AI context.
+- 4.2 DONE `MetricSnapshot` stores fast screener and overview metrics so the frontend does not recompute cross-row math.
+- 4.3 DONE `PriceCache` stores range responses and stale metadata in PostgreSQL. Cache truth lives in the database, not process memory.
+- 4.3.1 DONE Range caches include explicit sampling granularity so long-range payload size is bounded deterministically.
+- 4.4 DONE Authentication uses Django's built-in user model plus secure JWT cookie transport.
+- 4.5 DONE `AIUsageCounter` supports the V1 daily quotas of 10 anonymous prompts and 50 authenticated prompts without requiring Redis in V1.
+- 4.6 DONE `AIBudgetDay` tracks reserved and reconciled daily AI spend so the global cap is enforceable inside the product.
+- 4.7 DONE The daily AI hard cap is configured via environment variable and enforced before model invocation.
+- 4.8 DONE Raw SEC payloads are stored in a separate cold audit model, not on the hot `Company` row.
+- 4.9 DONE Raw SEC payload retention is bounded: keep the latest successful payload per `company + source` and the most recent failed payload for debugging.
+- 4.10 DONE AI quotas and the daily AI budget both reset on the `America/New_York` calendar day.
 
 ---
 
-## Tech Stack
+## 5.0 XBRL Normalization Contract
 
-### Backend
-| Component | Choice |
-|---|---|
-| Framework | Django 5 + Django REST Framework |
-| Database | PostgreSQL 16 (DigitalOcean Managed) |
-| AI | Claude Sonnet (Anthropic SDK) via Django StreamingHttpResponse |
-| Background jobs | Django management commands + cron (no Celery in V1) |
-| Auth | Django auth + simplejwt + django-allauth (Google OAuth) |
-| Rate limiting | django-ratelimit (IP) + per-user counter (DB) |
-| Admin | Django Admin — ingestion monitoring, data management |
+**Status:** DONE
 
-### Frontend
-| Component | Choice |
-|---|---|
-| Framework | React 18 + Vite |
-| Price charts | Lightweight Charts (TradingView open-source) |
-| Financial charts | Recharts |
-| AI chat UI | Custom component with streaming markdown |
-| Server state | TanStack Query (React Query) |
-| Routing | React Router v6 |
-| Styling | Vanilla CSS with design system variables |
-| Theme | Dark mode default with light mode toggle |
+This section is the heart of the rewrite. If these rules change, downstream charts, metrics, and AI answers change too.
 
-### Infrastructure
-| Service | Cost/mo |
-|---|---|
-| DO App Platform (backend + frontend) | ~$12 |
-| DO Managed PostgreSQL | ~$15 |
-| Custom domain + SSL | ~$12/year |
-| Claude API (Sonnet, rate-limited) | ~$5-10 |
-| **Total** | **~$32-37/mo** (~5-6 months with $200 credits) |
+### 5.1 Metric Registry
 
----
+**Status:** DONE
 
-## Data Sources
+Every supported metric must be declared in a registry with:
 
-| Source | What | License | Cost |
-|---|---|---|---|
-| **SEC EDGAR** | Financials (30+ yrs), company info | US Public domain | Free |
-| **yfinance** | Price data (OHLCV), current quotes | Public Yahoo data | Free |
-| **Claude API** | AI-powered financial analysis | Anthropic | ~$5-10/mo |
+**Dimensions:**
+- 5.1.1 DONE `metric_key`
+- 5.1.2 DONE metric class: `duration`, `instant`, `per_share`, or `derived`
+- 5.1.3 DONE allowed unit family, such as `USD`, `USD/share`, or `shares`
+- 5.1.4 DONE preferred SEC tags in priority order
+- 5.1.5 DONE whether the metric supports annual, quarterly, or both
 
----
+Initial V1 metric set:
 
-## Data Scope
+- revenue
+- gross_profit
+- operating_income
+- net_income
+- diluted_eps
+- operating_cash_flow
+- capital_expenditures
+- free_cash_flow
+- cash_and_equivalents
+- total_debt
+- shareholders_equity
+- shares_outstanding
 
-**V1: S&P 500 (~500 companies)**
+### 5.2 Fact Filtering Rules
 
-All 6 features at 500 companies beats 2 features at 7,000. A complete, polished product with fewer companies is a stronger portfolio piece than a half-built one with full coverage.
+**Status:** DONE
 
----
+Before selecting any canonical fact:
 
-## Pages & UI Design
+**Dimensions:**
+- 5.2.1 DONE Reject facts whose units do not match the metric's allowed unit family.
+- 5.2.2 DONE Reject segmented facts; V1 uses consolidated company-level facts only.
+- 5.2.3 DONE Reject facts without an end date.
+- 5.2.4 DONE Keep bounded raw SEC payload history in `RawSecPayload` for debugging and future audits, even when a fact is rejected from canonical selection.
 
-### Page Map
-```
-/                    → Landing — tool-first, search-dominant
-/stock/:ticker       → Stock Detail — tabbed, persistent company header
-/screener            → Stock Screener — filter sidebar + results table
-/about               → About + data sources + architecture diagram
-```
+### 5.3 Annual Fact Selection
 
-### Landing Page (/)
-**Approach: Tool-first. No hero. No marketing copy.**
+**Status:** DONE
 
-```
-┌──────────────────────────────────────────────────┐
-│ StockPulse                            [Sign In]  │
-├──────────────────────────────────────────────────┤
-│                                                  │
-│        Search any S&P 500 company                │
-│   [__________________________________ 🔍]        │
-│   Try: AAPL · MSFT · TSLA · GOOGL · JPM         │
-│                                                  │
-├──────────────────────────────────────────────────┤
-│ S&P 500   │ AAPL     │ MSFT     │ NVDA          │
-│ 5,831     │ $198.42  │ $421.30  │ $875.50       │
-│ -1.13%    │ +0.82%   │ -0.45%   │ +2.31%        │
-├──────────────────────────────────────────────────┤
-│                                                  │
-│ Top Gainers      Top Losers       Most Active    │
-│ ──────────       ──────────       ───────────    │
-│ NVDA +4.2%       INTC -3.1%      AAPL  52M vol  │
-│ META +2.8%       BA   -2.7%      TSLA  48M vol  │
-│ AMD  +2.1%       PFE  -2.3%      NVDA  41M vol  │
-│                                                  │
-├──────────────────────────────────────────────────┤
-│ [Screener]      Powered by SEC EDGAR + AI        │
-└──────────────────────────────────────────────────┘
+Annual duration metrics use this precedence:
+
+**Dimensions:**
+- 5.3.1 DONE Preferred forms: `10-K`, `10-K/A`, `20-F`, `20-F/A`, `40-F`, `40-F/A`
+- 5.3.2 DONE Expected duration window: 330 to 370 days
+- 5.3.3 DONE If both original and amended facts exist for the same period, the latest filed fact wins and `is_amended=true`
+- 5.3.4 DONE If multiple candidate facts still remain, choose by this ranking:
+
+```text
+1. Exact allowed unit match
+2. Consolidated non-segment fact
+3. Preferred annual form family
+4. Duration closest to one fiscal year
+5. Newest filed_date
+6. Stable deterministic tie-break on source_tag
 ```
 
-### Stock Detail Page (/stock/:ticker)
-**Persistent header + 5 tabs**
+### 5.4 Quarterly Fact Selection
 
+**Status:** DONE
+
+Quarterly duration metrics use this precedence:
+
+**Dimensions:**
+- 5.4.1 DONE Preferred forms: `10-Q`, `10-Q/A`
+- 5.4.2 DONE Expected duration window: 80 to 100 days
+- 5.4.3 DONE If an explicit quarter fact exists, it beats any derived quarter fact.
+- 5.4.4 DONE If only year-to-date values are available, Q2 and Q3 may be derived by subtracting the previous YTD value from the current YTD value when both facts share the same unit family and fiscal year.
+- 5.4.5 DONE Q4 may be derived as `FY - Q1 - Q2 - Q3` only when the annual fact and the first three quarter facts are canonical and internally consistent.
+- 5.4.6 DONE Derived facts are stored with `is_derived=true` and `selection_reason='derived_from_ytd'` or `selection_reason='derived_from_fy'`.
+- 5.4.7 DONE If derivation inputs conflict materially, no quarter fact is emitted; V1 prefers a gap to a wrong value.
+
+### 5.5 Instant Fact Selection
+
+**Status:** DONE
+
+For instant metrics such as cash, debt, and equity:
+
+**Dimensions:**
+- 5.5.1 DONE Use facts whose instant date matches the selected period end.
+- 5.5.2 DONE Annual snapshots prefer annual forms; quarterly snapshots prefer quarter filings.
+- 5.5.3 DONE If multiple facts match, use the same unit, amendment, filed date, and deterministic tie-break logic as duration metrics.
+
+### 5.6 Provenance Rules
+
+**Status:** DONE
+
+Every canonical fact must preserve enough provenance to explain why it exists.
+
+**Dimensions:**
+- 5.6.1 DONE Persist `source_tag`, `source_form`, `filed_date`, `is_amended`, `is_derived`, and `selection_reason`
+- 5.6.2 DONE The frontend can expose provenance later, but the backend must preserve it from day one
+- 5.6.3 DONE Normalization tests must prove that amended filings, duplicate facts, and mixed units resolve deterministically
+
+---
+
+## 6.0 Read Architecture
+
+**Status:** DONE
+
+### 6.1 Quote and Price Caching
+
+**Status:** DONE
+
+Price data is cache-first with graceful stale fallback.
+
+**Dimensions:**
+- 6.1.1 DONE Current quote cache TTL: 15 minutes
+- 6.1.2 DONE `1M`, `3M`, `6M`, `1Y` chart cache TTL: 6 hours
+- 6.1.3 DONE `5Y`, `MAX` chart cache TTL: 24 hours
+- 6.1.4 DONE If upstream price refresh fails, stale cached data is served with `stale=true` and `fetched_at`
+- 6.1.5 DONE The company header quote and Price tab must read from the same cached quote source to prevent mismatch
+- 6.1.6 DONE Price range downsampling is fixed by range: `1M`, `3M`, `6M` use daily points, `1Y` uses trading-day points, `5Y` uses weekly points, and `MAX` uses monthly points
+- 6.1.7 DONE The default price line uses adjusted close for every range, with no adjusted-vs-raw toggle in V1
+
+### 6.2 Snapshot Computation
+
+**Status:** DONE
+
+`MetricSnapshot` is recomputed from canonical facts and cached quote data.
+
+**Dimensions:**
+- 6.2.1 DONE Division-by-zero or missing-input cases produce `NULL`, not fake zeroes
+- 6.2.2 DONE Derived metrics must use the newest canonical facts only
+- 6.2.3 DONE Screener endpoints query `MetricSnapshot`, not raw `FinancialFact` joins on every request
+- 6.2.4 DONE For launch coverage audits, a derived metric counts as covered only when its required canonical inputs exist and snapshot computation produces a non-`NULL` result
+
+### 6.3 AI Context Construction
+
+**Status:** DONE
+
+The AI copilot only sees structured StockPulse data.
+
+**Dimensions:**
+- 6.3.1 DONE Context includes company metadata, current cached quote, 10 annual periods, 8 recent quarters, and the latest `MetricSnapshot`
+- 6.3.2 DONE The prompt frames the model as an analyst interpreting normalized numeric data, not quoting SEC filings
+- 6.3.3 DONE If data coverage is sparse, the assistant must say so plainly
+- 6.3.4 DONE SSE streaming is part of V1 because it materially improves perceived speed
+- 6.3.5 DONE AI access policy checks anonymous or authenticated quota before model invocation
+- 6.3.6 DONE Anonymous requests are identified by a signed `anon_ai_id` cookie and still respect the per-minute IP burst limit
+- 6.3.7 DONE Each copilot request reserves budget before model invocation and reconciles actual spend after completion
+- 6.3.8 DONE If the hard daily budget cap is already exhausted, the request is denied before any model call is attempted
+- 6.3.9 DONE Daily quota and budget accounting use the `America/New_York` calendar day, not the requester's local timezone
+
+### 6.4 Authentication Architecture
+
+**Status:** DONE
+
+Authentication is part of V1, but it stays narrow and boring.
+
+**Dimensions:**
+- 6.4.1 DONE Backend uses Django auth + `djangorestframework-simplejwt`
+- 6.4.2 DONE Google OAuth uses `django-allauth` with a backend-managed redirect/callback flow and is required in V1
+- 6.4.3 DONE JWTs are stored in `httpOnly` cookies, not localStorage
+- 6.4.4 DONE CSRF protection remains enabled for state-changing requests
+- 6.4.5 DONE Authentication exists to support higher AI limits and future user-owned features without gating browsing
+- 6.4.6 DONE The refresh endpoint reads the refresh cookie server-side; the frontend never stores or posts a refresh token body
+- 6.4.7 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
+
+---
+
+## 7.0 API Surface
+
+**Status:** DONE
+
+```text
+POST /api/auth/register/
+     { email, password, name }
+
+POST /api/auth/login/
+     { email, password }
+
+GET  /api/auth/google/start/
+
+GET  /api/auth/google/callback/
+
+POST /api/auth/refresh/
+     {}
+     refresh cookie only
+
+POST /api/auth/logout/
+
+GET  /api/companies/
+     ?search=apple
+     ?sector=Technology
+     ?page=1
+
+GET  /api/companies/{ticker}/
+
+GET  /api/companies/{ticker}/financials/
+     ?metrics=revenue,net_income,free_cash_flow
+     ?period_type=annual|quarterly
+     ?start_year=2014
+
+GET  /api/companies/{ticker}/prices/
+     ?range=1M|3M|6M|1Y|5Y|MAX
+
+GET  /api/companies/{ticker}/valuation-inputs/
+
+GET  /api/screener/
+     ?sector=Technology
+     ?pe_min=5
+     ?pe_max=30
+     ?market_cap_min=10000000000
+     ?sort=market_cap
+     ?order=desc
+
+POST /api/companies/{ticker}/copilot/
+     { "message": "Why did margins fall in 2022?" }
 ```
-┌──────────────────────────────────────────────────┐
-│ [← Back] StockPulse  [Search 🔍]     [Sign In]  │
-├──────────────────────────────────────────────────┤
-│ AAPL                                  $198.42    │
-│ Apple Inc.                        +$1.62 (+0.82%)│
-│ Technology · Consumer Electronics  MCap: $3.02T  │
-├──────────────────────────────────────────────────┤
-│ [Overview] [Financials] [Price] [Valuation] [AI] │
-├──────────────────────────────────────────────────┤
-│                                                  │
-│              [Tab content below]                 │
-│                                                  │
-└──────────────────────────────────────────────────┘
-```
 
-**Financials Tab (Hero Feature):**
-- Top: 4 key metric mini-cards (Revenue, Net Income, EPS, FCF) with sparklines + YoY change
-- Click any card to expand as the main chart
-- Main chart: full-width, annual/quarterly toggle
-- Bottom: "More Metrics" pill buttons (EBITDA, Margins, Debt, ROE, Cash, Shares)
-
-**Overview Tab:** Key stats grid (Market Cap, P/E, 52-wk, Dividend) + company description
-**Price Tab:** Full-width TradingView chart + timeframe pills + SMA toggles
-**Valuation Tab:** DCF result at top (fair value + upside/downside badge) + input sliders + sensitivity heatmap
-**AI Tab:** Chat interface with 3-4 suggested prompt pills + message input at bottom
-
-### AI Tab (Unauthenticated)
-Blurred chat interface behind a centered sign-in card: "Sign in to ask about [Company]'s financials" + email/password + Google button. Creates desire without blocking exploration.
-
-### Screener (/screener)
-- Desktop: collapsible filter sidebar + sortable results table + pagination
-- Mobile: filters as a bottom sheet, results as cards (not table)
+**Dimensions:**
+- 7.1 DONE Browsing endpoints are public.
+- 7.2 DONE Auth endpoints exist for registration, login, backend-managed Google sign-in start/callback, cookie-based refresh, and logout.
+- 7.3 DONE Price responses include cache freshness metadata.
+- 7.4 DONE Financial responses expose only canonical normalized facts.
+- 7.5 DONE Copilot responses must enforce anonymous or authenticated quota and global budget before invoking the model.
 
 ---
 
-## Interaction States
+## 8.0 Build Sequence
 
-| Feature | Loading | Empty | Error |
-|---------|---------|-------|-------|
-| Search | Debounced, results appear as typed | "Search any S&P 500 company" | "Search unavailable" |
-| Market Movers | Skeleton cards (pulsing) | "Market data loading..." | "Market data temporarily unavailable" |
-| Financial Charts | Skeleton chart shape | "No financial data for [Company]" | "Failed to load. Try again." |
-| Price Chart | Skeleton chart | "Price data unavailable" | "Unable to load price data" + stale badge |
-| DCF Calculator | Skeleton sliders | "Insufficient data for DCF" | "Unable to compute fair value" |
-| AI Chat | Typing indicator (pulsing dots) | 3 suggested prompt pills | "AI temporarily unavailable" |
-| AI Rate Limit | — | — | "You've used 50/50 queries today" |
-| Screener | Skeleton table rows | "No companies match filters. Try adjusting." | "Failed to load screener" |
+**Status:** IN_PROGRESS
 
-**Loading approach:** Skeleton screens everywhere (pulsing gray placeholders matching content layout). Content fades in when ready. No spinners.
+The rewrite should happen in vertical slices, not repo cleanup tasks.
+
+### 8.0.1 Rewrite Migration Strategy
+
+**Status:** DONE
+
+The current implementation on `main` is not the foundation of the rewrite, but it is still useful reference material. The migration strategy should preserve that value without trapping the project in a dual-app cleanup phase.
+
+**Dimensions:**
+- 8.0.1.1 DONE Preserve the current implementation in Git history and, before invasive replacement work begins, anchor it with a dedicated legacy branch or tag such as `legacy/pre-rewrite` or `pre-rewrite-main`.
+- 8.0.1.2 DONE The rewrite happens in the active repository, ideally on a dedicated rewrite branch or worktree, and later becomes the new `main` via merge rather than by changing the default branch early.
+- 8.0.1.3 DONE Do not keep a long-lived parallel `legacy/` app or duplicate frontend/backend tree on `main`; that would create drift, agent confusion, and extra maintenance cost.
+- 8.0.1.4 DONE Existing code may be consulted for ideas, mappings, fixtures, and operational lessons, but old component boundaries, endpoints, and abstractions are not treated as architecture constraints.
+- 8.0.1.5 DONE Replace the product milestone by milestone; once a new slice is real and verified, remove or supersede the old slice instead of maintaining both implementations in parallel.
+- 8.0.1.6 DONE Reuse is selective and explicit: keep only what still earns its place, such as data mappings, representative fixtures, or source lists, and rebuild the rest against the new contracts in this plan.
+
+### 8.1 M1 — Foundation
+
+**Status:** DONE
+
+**Dimensions:**
+- 8.1.1 DONE Replace ad hoc scripts with standard repo entry points: `make dev`, `make lint`, `make test`, `make build`
+- 8.1.2 DONE Add backend pytest, frontend vitest, and Playwright smoke coverage
+- 8.1.3 DONE Create seed fixtures for 25 representative companies across sectors
+- 8.1.4 DONE Add normalization fixture tests before building the UI
+- 8.1.5 DONE Add GitHub Actions CI with required PR checks for backend lint/tests, frontend lint/tests/build, and Playwright smoke
+
+### 8.2 M2 — Ingestion and Canonical Data
+
+**Status:** IN_PROGRESS
+
+Locked execution decisions:
+- hard-cut to the final canonical schema now; do not extend the legacy model shape
+- treat local and dev data as disposable; reset and rebuild after the schema cut
+- do not add compatibility glue for unreleased local data
+- build an explicit metric registry before live SEC ingestion work
+- persist raw SEC payloads in `RawSecPayload`, not on `Company`
+- replace `StockMetrics` with `MetricSnapshot`
+- replace `compute_metrics` with `compute_snapshots`
+- treat the S&P 500 coverage audit as a real M2 artifact, not a launch-week manual task
+
+Implementation order:
+1. cut the schema to the final canonical models
+2. build the metric registry
+3. prove normalization deterministically against fixtures
+4. persist raw SEC payloads and ingestion runs
+5. rebuild `ingest_companies`
+6. rebuild `ingest_financials`
+7. build `compute_snapshots`
+8. reset local/dev data and rebuild from the new pipeline
+9. expand from the 25-company seed to the full S&P 500
+10. record the launch coverage audit
+
+**Dimensions:**
+- 8.2.1 DONE Hard-cut to the final canonical schema: `FinancialFact`, `MetricSnapshot`, `RawSecPayload`, `IngestionRun`, and `PriceCache`
+- 8.2.2 DONE Build the metric registry and prove deterministic normalization with fixture-based tests for amended filings, mixed units, and derived quarters
+- 8.2.3 PENDING Persist bounded raw SEC payloads in `RawSecPayload`, rebuild `ingest_companies`, and rebuild `ingest_financials` against the canonical schema
+- 8.2.4 PENDING Replace legacy `compute_metrics` with `compute_snapshots` on top of canonical facts only
+- 8.2.5 PENDING Reset local/dev data after the schema cut, rebuild from the new pipeline, expand from the 25-company seed set to full S&P 500 coverage, and record the launch coverage audit at `95%+` launch-critical metric coverage
+
+### 8.3 M3 — Public Read APIs and Stock Detail Shell
+
+**Status:** PENDING
+
+**Dimensions:**
+- 8.3.1 PENDING Build company list, company detail, and financials endpoints
+- 8.3.2 PENDING Build landing page search and stock detail app shell
+- 8.3.3 PENDING Build overview and financial tabs against canonical data
+- 8.3.4 PENDING Ship loading, empty, error, and no-data states with the first usable slice
+
+### 8.4 M4 — Price, Valuation, and Screener
+
+**Status:** PENDING
+
+**Dimensions:**
+- 8.4.1 PENDING Build quote and price cache flows
+- 8.4.2 PENDING Build Price tab with stale fallback
+- 8.4.3 PENDING Build valuation inputs and a Qualtrim-style DCF calculator
+- 8.4.4 PENDING Build the focused V1 screener on top of `MetricSnapshot`
+
+### 8.5 M5 — Authentication
+
+**Status:** PENDING
+
+**Dimensions:**
+- 8.5.1 PENDING Build auth endpoints, secure cookie flow, and auth context on the frontend
+- 8.5.2 PENDING Build a Google-first auth modal with email/password fallback
+- 8.5.3 PENDING Add auth tests for registration, login, refresh, logout, and backend-managed Google callback flow
+
+### 8.6 M6 — AI Copilot
+
+**Status:** PENDING
+
+**Dimensions:**
+- 8.6.1 PENDING Build context assembler from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
+- 8.6.2 PENDING Add signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, and daily spend enforcement via `AIBudgetDay`
+- 8.6.3 PENDING Add SSE streaming UI and error states
+- 8.6.4 PENDING Add prompt and response tests for groundedness and sparse-data honesty
+
+### 8.7 M7 — Hardening and Deploy
+
+**Status:** PENDING
+
+**Dimensions:**
+- 8.7.1 PENDING Add scheduled worker execution for management commands
+- 8.7.2 PENDING Add production settings, health checks, and deployment configuration
+- 8.7.3 PENDING Complete accessibility, responsive, and performance polish
+- 8.7.4 PENDING Update README with setup, architecture, and screenshots
+- 8.7.5 PENDING Add staging auto-deploy, production manual promotion, automated migrations, post-deploy smoke checks, and documented rollback steps
 
 ---
 
-## Responsive Design
+## 9.0 Verification Gates
 
-**Mobile (< 640px):**
-- Landing: search full-width sticky top, market movers vertical stack
-- Stock detail header: compact (ticker + price), tabs horizontal scroll
-- Financials: mini-cards 2x2 grid, chart full-width (60vh), metric pills horizontal scroll
-- Price: chart full-width, timeframe pills horizontal scroll
-- AI: full-screen chat (like iMessage), input sticky bottom
-- Screener: filters as bottom sheet, results as cards not table
+**Status:** PENDING
 
-**Tablet (640-1024px):**
-- Landing: 2-column market movers
-- Financials: 4 mini-cards in a row, chart full-width
-- Screener: collapsible sidebar filters
+No milestone is complete without passing its verification gate.
 
-**Accessibility:**
-- Touch targets: 44px minimum
-- Color contrast: WCAG AA (4.5:1 body, 3:1 large text)
-- Keyboard: Tab through all interactive elements, Enter to submit
-- ARIA: landmarks for main/nav/search, role="tablist" for tabs
-- Focus ring: 2px teal outline on all focusable elements
-- Charts: accessible data table alternative (aria-described)
+**Dimensions:**
+- 9.1 PENDING `make lint` passes
+- 9.2 PENDING `make test` passes
+- 9.3 PENDING `make build` passes
+- 9.4 PENDING Playwright smoke flow passes: landing -> search -> stock detail -> AI prompt submit
+- 9.5 PENDING Auth flow smoke coverage passes for register/login/logout
+- 9.6 PENDING Normalization fixtures prove deterministic handling of duplicates, amendments, mixed units, and derived quarters
+- 9.7 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
+- 9.8 PENDING Google sign-in smoke coverage passes end to end
+- 9.9 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
+- 9.10 PENDING Required GitHub Actions checks pass on pull requests and protected-branch rules keep `main` merge-safe
+- 9.11 PENDING Staging and production deployment workflows prove build-once/promote-forward behavior with post-deploy health verification
 
 ---
 
-## Anti-Slop Rules
+## 10.0 Acceptance Criteria
 
-- NO hero sections, gradient backgrounds, or marketing copy on landing
-- NO 3-column feature grids
-- NO gradient buttons — solid teal with hover darken
-- NO uniform border-radius — use hierarchical scale from DESIGN.md
-- NO default Recharts colors — use teal accent + zinc scale
-- NO "Built for..." / "Designed for..." copy patterns
-- Financial data always in JetBrains Mono with tabular-nums
-- Green (#4ADE80) for positive, Red (#F87171) for negative — never reversed
+**Status:** PENDING
 
----
+- [ ] 10.1 Any S&P 500 company in scope can be searched and opened from the public landing page
+- [ ] 10.2 Core financial metrics render from canonical normalized SEC data
+- [ ] 10.3 Quote and price chart data use shared cached sources and expose freshness clearly
+- [ ] 10.4 Screener performance is driven by `MetricSnapshot`, not heavy request-time joins
+- [ ] 10.5 AI copilot answers per-company questions using structured StockPulse data and admits uncertainty when coverage is thin
+- [ ] 10.6 Users can register, log in, refresh auth state, and sign in with Google using secure cookie-based auth
+- [ ] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
+- [ ] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
+- [ ] 10.9 The repo has green lint, test, build, and smoke gates
+- [ ] 10.10 A documented S&P 500 coverage audit exists before launch, shows at least 95% coverage for the full launch-critical metric set, and calls out known gaps explicitly
+- [ ] 10.11 The scheduled-worker job model meets the documented V1 timing SLAs, or the plan is explicitly revised before launch
+- [ ] 10.12 Google sign-in and anonymous-to-authenticated AI upgrade flows are explicitly covered by launch smoke tests
+- [ ] 10.13 CI protects `main` with required backend, frontend, and smoke checks
+- [ ] 10.14 CD supports staging auto-deploy, production manual promotion, automated migrations, and documented rollback
 
-## Django Admin Usage
-- View/manage ingested companies and financial data
-- Monitor ingestion status via IngestionLog (last updated, errors, records created)
-- Manually trigger re-ingestion for specific tickers (--force --ticker AAPL)
-- View pre-computed screener metrics
-- Admin dashboard as internal ops tool
+Launch-critical metric set for 10.10:
+- revenue
+- gross_profit
+- operating_income
+- net_income
+- free_cash_flow
+- cash_and_equivalents
+- total_debt
+- shares_outstanding
+- revenue_growth_yoy
+- gross_margin
+- operating_margin
+- net_margin
 
----
-
-## Open Questions (Resolved)
-
-| Question | Resolution |
-|---|---|
-| Claude API abuse prevention | 50 queries/day per session token + 3 req/min per IP + $5/day Anthropic cap |
-| SEC EDGAR rate limiting | 10 req/sec with exponential backoff, idempotent resumable pipeline |
-| yfinance reliability | Cache aggressively, serve stale with "Updated X ago" badge |
-| Domain name | TBD — check availability |
-
----
-
-## Success Criteria
-
-- [ ] Live at a custom domain with SSL
-- [ ] All 6 features working for S&P 500 companies
-- [ ] AI copilot answers questions about any S&P 500 company's financials
-- [ ] XBRL mapping resolves metrics for 95%+ of S&P 500 companies
-- [ ] Page load under 2 seconds, Lighthouse score > 90
-- [ ] Dark mode default, responsive down to mobile
-- [ ] Graceful degradation when yfinance is unavailable
-- [ ] Clean GitHub repo with README, architecture diagram, and clear commit history
-- [ ] A hiring manager can use it for 60 seconds and understand the engineering depth
+For 10.10, derived metrics in the launch-critical set count as covered only when their required canonical inputs exist and the derived result is non-`NULL`.
 
 ---
 
-## Ship Order
+## 11.0 Out of Scope
 
-1. **Data Pipeline** — ingest_companies + ingest_financials + update_prices + compute_metrics
-2. **Django Models & Admin** — Company, FinancialFact, StockMetrics, IngestionLog
-3. **API Layer** — DRF endpoints for all data
-4. **Stock Search & Company Profile** — typeahead + detail page
-5. **Financial Analysis Dashboard** — 10+ charts with Recharts
-6. **Interactive Price Chart** — TradingView Lightweight Charts
-7. **DCF Calculator** — with guardrails and sensitivity heatmap
-8. **AI Financial Copilot** — Claude Sonnet streaming chat
-9. **Stock Screener** — filterable metrics table
-10. **Polish & Deploy** — loading skeletons, error states, responsive, CI/CD, custom domain
-
----
-
-## What This Demonstrates (Resume Talking Points)
-
-| Skill | Evidence |
-|---|---|
-| Authentication | JWT auth + Google OAuth, per-user rate limiting, protected endpoints |
-| AI/LLM integration | Claude Sonnet with structured financial context, streaming SSE, smart context pruning, rate limiting |
-| Data engineering | Idempotent, resumable pipeline normalizing SEC XBRL data (with tag mapping) for 500 companies across 30 years |
-| API design | DRF APIs with dynamic filtering, computed fields, pagination, yfinance proxy with caching |
-| Database design | Financial time-series schema, pre-computed metrics, XBRL normalization, ingestion tracking |
-| Background processing | Management commands with SEC rate limiting, exponential backoff, error handling, incremental updates |
-| Complex querying | Screener with multi-field dynamic filtering + sorting, select_related optimization |
-| Django Admin | Custom admin for ingestion monitoring and data ops |
-| Frontend | React with professional charting, streaming AI chat, responsive dark-mode design |
-| Domain knowledge | Financial metrics, DCF valuation with guardrails, stock screening, XBRL taxonomy |
-| DevOps | Docker, CI/CD, managed database, custom domain, SSL, graceful degradation |
+- Saved conversations
+- Live market movers on the landing page
+- Real-time quote streaming
+- Portfolio tracking and watchlists
+- News, earnings, and macro overlays
+- Cross-company RAG or vector search
