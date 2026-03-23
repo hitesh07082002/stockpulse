@@ -18,8 +18,8 @@ from stocks.ai_providers import (
     _extract_gemini_text_delta,
     _extract_gemini_usage,
 )
-from stocks.copilot import CopilotRequestError, current_ai_day, reconcile_budget, reserve_budget
-from stocks.models import AIBudgetDay, AIUsageCounter, Company, FinancialFact, MetricSnapshot
+from stocks.copilot import current_ai_day
+from stocks.models import AIUsageCounter, Company, FinancialFact, MetricSnapshot
 
 
 class FakeProvider:
@@ -27,9 +27,6 @@ class FakeProvider:
 
     def ensure_configured(self):
         return None
-
-    def estimate_reservation_usd(self, _text):
-        return Decimal("0.2500")
 
     def calculate_actual_cost_usd(self, usage):
         if usage is None:
@@ -264,28 +261,6 @@ def test_anthropic_provider_normalizes_text_and_usage(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_budget_reserve_and_reconcile_updates_daily_state():
-    reservation = reserve_budget(Decimal("0.4000"))
-    reconcile_budget(reservation, Decimal("0.1750"))
-
-    budget_day = AIBudgetDay.objects.get(day=current_ai_day())
-    assert budget_day.reserved_cost_usd == Decimal("0.0000")
-    assert budget_day.actual_cost_usd == Decimal("0.1750")
-    assert budget_day.request_count == 1
-
-
-@pytest.mark.django_db
-@override_settings(AI_DAILY_BUDGET_USD=Decimal("1.00"))
-def test_budget_reserve_blocks_when_cap_is_exhausted():
-    reserve_budget(Decimal("0.8000"))
-
-    with pytest.raises(CopilotRequestError) as exc_info:
-        reserve_budget(Decimal("0.3000"))
-
-    assert exc_info.value.code == "budget_exhausted"
-
-
-@pytest.mark.django_db
 def test_copilot_endpoint_streams_meta_text_done_and_sets_anon_cookie(api_client, company, monkeypatch):
     monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: FakeProvider())
 
@@ -311,9 +286,7 @@ def test_copilot_endpoint_streams_meta_text_done_and_sets_anon_cookie(api_client
     assert '"remaining_quota": 9' in stream_text
 
     usage_counter = AIUsageCounter.objects.get(day=current_ai_day())
-    budget_day = AIBudgetDay.objects.get(day=current_ai_day())
     assert usage_counter.request_count == 1
-    assert budget_day.actual_cost_usd == Decimal("0.0500")
 
 
 @pytest.mark.django_db
