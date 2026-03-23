@@ -1,0 +1,4 @@
+# StockPulse scheduled jobs
+*/15 * * * * (docker exec stockpulse-web python manage.py update_prices && docker exec stockpulse-web python manage.py compute_snapshots) >> /var/log/stockpulse/prices.log 2>&1
+0 6 * * * (docker exec stockpulse-web python manage.py ingest_financials && docker exec stockpulse-web python manage.py compute_snapshots) >> /var/log/stockpulse/nightly.log 2>&1
+0 5 * * 0 (docker exec stockpulse-web python manage.py ingest_companies && docker exec stockpulse-web python manage.py enrich_company_metadata) >> /var/log/stockpulse/weekly.log 2>&1
