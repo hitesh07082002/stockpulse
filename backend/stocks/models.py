@@ -139,11 +139,13 @@ class IngestionRun(models.Model):
     SOURCE_SEC = "sec"
     SOURCE_PRICES = "prices"
     SOURCE_SNAPSHOTS = "snapshots"
+    SOURCE_METADATA = "metadata"
     SOURCE_CHOICES = [
         (SOURCE_COMPANIES, "Companies"),
         (SOURCE_SEC, "SEC"),
         (SOURCE_PRICES, "Prices"),
         (SOURCE_SNAPSHOTS, "Snapshots"),
+        (SOURCE_METADATA, "Metadata"),
     ]
 
     STATUS_IN_PROGRESS = "in_progress"

@@ -81,10 +81,10 @@ Responsibilities:
 - retain bounded raw SEC payloads in a cold audit store for debugging and future audits
 - generate fast screener and overview read models
 
-Current metadata limitation:
-- `ingest_companies` currently loads the company universe from the curated S&P 500 CSV using only `ticker`, `name`, `sector`, `industry`, and `cik`
-- `description`, `website`, and `exchange` are not broadly enriched yet, so blank company bios are expected in the current rewrite state
-- fixing that requires a separate metadata-enrichment path; it is not part of the SEC financial normalization pipeline
+Current metadata path:
+- `ingest_companies` still loads the company universe from the curated S&P 500 CSV using only `ticker`, `name`, `sector`, `industry`, and `cik`
+- `enrich_company_metadata` now fills `description`, `website`, and `exchange` from Yahoo Finance plus a curated override CSV
+- metadata enrichment remains separate from the SEC financial normalization pipeline, so bio quality issues are handled through override curation instead of `ingest_financials`
 
 M2 execution rules:
 - start with a schema-first hard cut to `FinancialFact`, `MetricSnapshot`, `RawSecPayload`, `IngestionRun`, and `PriceCache`
