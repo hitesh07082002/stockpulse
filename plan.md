@@ -146,7 +146,7 @@ The primary user journey is simple and fast:
 - 3.6.5 DONE `Cash Flow` mode centers on free-cash-flow-per-share inputs and a projected cash-flow multiple outcome.
 - 3.6.6 DONE The primary valuation visual is a 5-year projection chart with summary result cards above it.
 - 3.6.7 DONE Sensitivity heatmaps, spreadsheet-grade scenario trees, saved models, and advanced dilution modeling are out of V1.
-- 3.6.8 DONE Valuation guardrails: disable DCF for GICS financial-sector companies (banks, insurers, exchanges) with an explanatory "Valuation not applicable" state. Warn on negative trailing earnings or negative trailing FCF. Require `shares_outstanding` to be non-null before enabling Cash Flow mode. Missing or nonsensical inputs produce a clear data-quality warning, not a garbage calculation.
+- 3.6.8 DONE Valuation guardrails: keep the DCF calculator available for financial-sector companies, but show the rough-fit caution in `Cash Flow` mode where simplified cash-flow DCF is weakest for banks, insurers, exchanges, and brokers. Warn on negative trailing earnings or negative trailing FCF. Require `shares_outstanding` to be non-null before enabling Cash Flow mode. Missing or nonsensical inputs produce a clear data-quality warning, not a garbage calculation.
 
 ---
 
@@ -579,7 +579,7 @@ Implementation order:
 - 8.4.2 DONE Build Price tab with stale fallback
 - 8.4.3 DONE Build valuation inputs and a Qualtrim-style DCF calculator
 - 8.4.4 DONE Build the focused V1 screener on top of `MetricSnapshot`
-- 8.4.5 DONE Required tests: API endpoint tests for prices (each range + stale fallback), valuation-inputs, screener (filters + sort + empty); unit tests for valuation guardrails (financial-sector disable, negative earnings, negative FCF, missing shares_outstanding); Playwright smoke for price tab range selector and screener filter-to-company flow
+- 8.4.5 DONE Required tests: API endpoint tests for prices (each range + stale fallback), valuation-inputs, screener (filters + sort + empty); unit tests for valuation guardrails (financial-sector caution, negative earnings, negative FCF, missing shares_outstanding); Playwright smoke for price tab range selector and screener filter-to-company flow
 
 ### 8.5 M5 — Authentication
 
@@ -660,7 +660,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 ### 9.3 M4 Gates (Price, Valuation, Screener)
 
 - 9.3.1 DONE API endpoint tests: prices (each range + stale), valuation-inputs, screener (filters + sort + empty)
-- 9.3.2 DONE Valuation guardrail tests: financial-sector disable, negative earnings warning, negative FCF warning, missing shares_outstanding
+- 9.3.2 DONE Valuation guardrail tests: financial-sector caution, negative earnings warning, negative FCF warning, missing shares_outstanding
 - 9.3.3 DONE Playwright smoke: price tab range selector, screener filter-to-company flow
 
 ### 9.4 M5 Gates (Authentication)

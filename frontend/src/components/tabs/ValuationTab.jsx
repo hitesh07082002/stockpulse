@@ -273,7 +273,7 @@ function ValuationTab({ ticker }) {
           <h3 className="font-display text-2xl font-semibold text-text-primary">DCF Calculator</h3>
           <WarningList warnings={data?.warnings} />
         </section>
-        <StatePanel message={data?.not_applicable_reason || 'Not applicable for financial sector companies'} />
+        <StatePanel message={data?.not_applicable_reason || 'Valuation unavailable for this company'} />
       </div>
     );
   }
@@ -287,6 +287,7 @@ function ValuationTab({ ticker }) {
   const terminalLabel = modeKey === 'cashFlow'
     ? 'Appropriate FCF Multiple'
     : 'Appropriate EPS Multiple';
+  const visibleWarnings = [...(data?.warnings || []), ...(modeData?.warnings || [])];
   const projectionMessage = modeData.available
     ? 'Adjust the current metric and assumptions to see the five-year projection.'
     : (modeData.availability_reason || 'Insufficient data for valuation');
@@ -378,7 +379,7 @@ function ValuationTab({ ticker }) {
             </div>
           )}
 
-          <WarningList warnings={data?.warnings} />
+          <WarningList warnings={visibleWarnings} />
         </div>
       </section>
 

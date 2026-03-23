@@ -279,7 +279,7 @@ def valuation_inputs_view(request, ticker):
     current_price = _safe_number(company.current_price)
     earnings_growth_rate_default = _compute_earnings_growth_default(company, snapshot)
     cash_flow_growth_rate_default = _compute_cash_flow_growth_default(company, snapshot)
-    financial_sector_disabled = _is_financial_sector_company(company)
+    financial_sector_company = _is_financial_sector_company(company)
 
     earnings_metric_value = _compute_eps_value(company, snapshot)
     negative_earnings = earnings_metric_value is not None and earnings_metric_value < 0
@@ -298,32 +298,28 @@ def valuation_inputs_view(request, ticker):
         cash_flow_multiple = 15.0
 
     warnings = []
-    if financial_sector_disabled:
-        warnings.append(
-            "Valuation is not applicable for financial sector companies in V1."
-        )
+    earnings_warnings = []
+    cash_flow_warnings = []
     if negative_earnings:
-        warnings.append(
+        earnings_warnings.append(
             "Trailing earnings are negative, so earnings-based valuation needs extra caution."
         )
+    if financial_sector_company:
+        cash_flow_warnings.append(
+            "Financial companies fit a simplified cash-flow DCF less cleanly, so use this output as a rough framing tool."
+        )
     if negative_cash_flow:
-        warnings.append(
+        cash_flow_warnings.append(
             "Free cash flow is currently negative, so cash-flow-based valuation should be used with caution."
         )
     if shares_outstanding in (None, 0):
-        warnings.append(
+        cash_flow_warnings.append(
             "Cash Flow mode requires shares outstanding before per-share valuation can be shown."
         )
 
-    not_applicable_reason = (
-        "Not applicable for financial sector companies."
-        if financial_sector_disabled
-        else None
-    )
-    earnings_mode_available = not financial_sector_disabled and earnings_metric_value is not None
+    earnings_mode_available = earnings_metric_value is not None
     cash_flow_mode_available = (
-        not financial_sector_disabled
-        and cash_flow_metric_value is not None
+        cash_flow_metric_value is not None
         and shares_outstanding not in (None, 0)
     )
 
@@ -335,10 +331,10 @@ def valuation_inputs_view(request, ticker):
         'current_price': company.current_price,
         'shares_outstanding': company.shares_outstanding,
         'projection_years_default': 5,
-        'not_applicable': financial_sector_disabled,
-        'not_applicable_reason': not_applicable_reason,
+        'not_applicable': False,
+        'not_applicable_reason': None,
         'guardrails': {
-            'financial_sector_disabled': financial_sector_disabled,
+            'financial_sector_caution': financial_sector_company,
             'negative_earnings': negative_earnings,
             'negative_free_cash_flow': negative_cash_flow,
             'missing_shares_outstanding': shares_outstanding in (None, 0),
@@ -347,12 +343,11 @@ def valuation_inputs_view(request, ticker):
         'earnings_mode': {
             'available': earnings_mode_available,
             'availability_reason': (
-                not_applicable_reason
-                if financial_sector_disabled
-                else f"Missing trailing {('EPS')} input."
+                "Missing trailing EPS input."
                 if earnings_metric_value is None
                 else None
             ),
+            'warnings': earnings_warnings,
             'current_metric_label': 'EPS',
             'current_metric_value': earnings_metric_value,
             'growth_rate_default': earnings_growth_rate_default,
@@ -363,14 +358,13 @@ def valuation_inputs_view(request, ticker):
         'cash_flow_mode': {
             'available': cash_flow_mode_available,
             'availability_reason': (
-                not_applicable_reason
-                if financial_sector_disabled
-                else "Missing shares outstanding for per-share cash flow valuation."
+                "Missing shares outstanding for per-share cash flow valuation."
                 if shares_outstanding in (None, 0)
                 else "Missing trailing free cash flow input."
                 if cash_flow_metric_value is None
                 else None
             ),
+            'warnings': cash_flow_warnings,
             'current_metric_label': 'FCF Per Share',
             'current_metric_value': cash_flow_metric_value,
             'growth_rate_default': cash_flow_growth_rate_default,
