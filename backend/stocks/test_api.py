@@ -5,6 +5,7 @@ import types
 
 import pandas as pd
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from stocks.models import Company, FinancialFact, MetricSnapshot
@@ -26,6 +27,8 @@ def company():
         current_price=Decimal("415.67"),
         market_cap=3_100_000_000_000,
         shares_outstanding=7_430_000_000,
+        quote_updated_at=timezone.now(),
+        facts_updated_at=timezone.now(),
     )
 
     MetricSnapshot.objects.create(
@@ -35,6 +38,7 @@ def company():
         revenue_growth_yoy=Decimal("0.1200"),
         operating_margin=Decimal("0.4400"),
         net_margin=Decimal("0.3600"),
+        free_cash_flow=Decimal("100000000000"),
     )
 
     FinancialFact.objects.create(
@@ -132,6 +136,67 @@ def test_company_detail_includes_related_metrics(api_client, company):
     assert payload["name"] == "Microsoft Corporation"
     assert payload["pe_ratio"] == 28.4
     assert payload["dividend_yield"] == 0.0085
+    assert payload["revenue_growth_yoy"] == 0.12
+    assert payload["net_margin"] == 0.36
+    assert payload["free_cash_flow"] == 100000000000.0
+    assert payload["latest_revenue"] == 245122000000.0
+
+
+@pytest.mark.django_db
+def test_company_detail_returns_404_for_unknown_ticker(api_client):
+    response = api_client.get("/api/companies/UNKNOWN/")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_company_list_search_returns_paginated_results(api_client, company):
+    Company.objects.create(
+        cik="0001326801",
+        ticker="META",
+        name="Meta Platforms, Inc.",
+        sector="Communication Services",
+        industry="Internet Services",
+    )
+
+    response = api_client.get("/api/companies/", {"search": "Micro"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["count"] == 1
+    assert payload["results"][0]["ticker"] == "MSFT"
+
+
+@pytest.mark.django_db
+def test_company_list_returns_empty_results_when_search_has_no_match(api_client, company):
+    response = api_client.get("/api/companies/", {"search": "ZZZZZZ"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["count"] == 0
+    assert payload["results"] == []
+
+
+@pytest.mark.django_db
+def test_company_list_honors_pagination_boundary(api_client, company):
+    for idx in range(30):
+        Company.objects.create(
+            cik=f"{idx + 1000000}",
+            ticker=f"T{idx:03d}",
+            name=f"Test Company {idx:03d}",
+            sector="Utilities",
+            industry="Power",
+        )
+
+    response = api_client.get("/api/companies/", {"page": 2})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["count"] == 31
+    assert len(payload["results"]) == 6
 
 
 @pytest.mark.django_db
@@ -148,12 +213,33 @@ def test_financials_endpoint_filters_metric_period_and_year(api_client, company)
     assert response.status_code == 200
     payload = response.json()
 
-    assert len(payload) == 1
-    assert payload[0]["metric_key"] == "revenue"
-    assert payload[0]["fiscal_year"] == 2024
-    assert payload[0]["period_end"] == "2024-06-30"
-    assert payload[0]["source_form"] == "10-K"
-    assert payload[0]["value"] == "245122000000.000000"
+    assert payload["ticker"] == "MSFT"
+    assert payload["period_type"] == "annual"
+    assert payload["available_metrics"] == ["revenue"]
+    assert len(payload["facts"]) == 1
+    assert payload["facts"][0]["metric_key"] == "revenue"
+    assert payload["facts"][0]["fiscal_year"] == 2024
+    assert payload["facts"][0]["period_end"] == "2024-06-30"
+    assert payload["facts"][0]["source_form"] == "10-K"
+    assert payload["facts"][0]["value"] == "245122000000.000000"
+
+
+@pytest.mark.django_db
+def test_financials_endpoint_returns_empty_envelope_for_company_without_facts(api_client):
+    company = Company.objects.create(
+        cik="0000000123",
+        ticker="EMTY",
+        name="Empty Co",
+    )
+
+    response = api_client.get("/api/companies/EMTY/financials/", {"period_type": "annual"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["ticker"] == company.ticker
+    assert payload["facts"] == []
+    assert payload["available_metrics"] == []
 
 
 @pytest.mark.django_db

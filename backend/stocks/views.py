@@ -206,8 +206,18 @@ def financials_view(request, ticker):
     if end_year:
         qs = qs.filter(fiscal_year__lte=int(end_year))
 
-    serializer = FinancialFactSerializer(qs.order_by('fiscal_year', 'fiscal_quarter'), many=True)
-    return Response(serializer.data)
+    ordered_facts = qs.order_by('fiscal_year', 'fiscal_quarter', 'metric_key')
+    available_metrics = list(
+        ordered_facts.order_by().values_list('metric_key', flat=True).distinct()
+    )
+    serializer = FinancialFactSerializer(ordered_facts, many=True)
+    return Response({
+        'ticker': company.ticker,
+        'company_name': company.name,
+        'period_type': period_type or None,
+        'available_metrics': available_metrics,
+        'facts': serializer.data,
+    })
 
 
 # --- Price endpoint (yfinance proxy with caching) ---

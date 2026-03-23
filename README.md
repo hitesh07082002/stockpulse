@@ -79,9 +79,9 @@ Do not jump ahead to AI polish or peripheral product features before the Financi
 - replace slices milestone by milestone
 - do not maintain a long-lived parallel legacy app inside `main`
 
-## M1 Progress
+## Milestone Progress
 
-M1 foundation work is complete and verified.
+M1, M2, and M3 are complete and verified.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
@@ -90,15 +90,19 @@ Already in place:
 - Playwright smoke scaffold
 - 25-company representative seed fixture
 - initial GitHub Actions CI workflow
+- search-first landing page with live company search
+- stock detail shell with quote freshness and mobile-safe tab bar
+- overview and financials tabs wired to canonical company detail, snapshot, and SEC facts endpoints
+- company list/detail/financials API coverage, frontend state coverage, and landing -> detail -> Financials smoke coverage
 
 Latest verification pass:
 - `make lint`
 - `make test`
 - `make build`
 - `make qa-smoke`
-- `PLAYWRIGHT_BASE_URL=http://localhost:5173 npm --prefix frontend run test:e2e -- tests/e2e/stock-detail.spec.js`
 
 Next up:
+- M4 price, valuation, and screener hardening is next
 - M2 ingestion and canonical data is complete
 - the schema cut, metric registry, canonical `ingest_financials`, `update_prices`, and `compute_snapshots` are now in place
 - local SQLite dev data was reset and rebuilt from the real pipeline with the full 500-company universe

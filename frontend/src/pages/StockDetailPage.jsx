@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCompany } from '../hooks/useStockData';
 import OverviewTab from '../components/tabs/OverviewTab';
@@ -38,6 +38,20 @@ function formatChange(value) {
   return `${sign}${num.toFixed(2)}%`;
 }
 
+function formatQuoteTimestamp(value) {
+  if (!value) return null;
+
+  const updatedAt = new Date(value);
+  if (Number.isNaN(updatedAt.getTime())) return null;
+
+  return updatedAt.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function StockDetailPage() {
   const { ticker } = useParams();
   const { data: company, isLoading, isError, error } = useCompany(ticker);
@@ -55,10 +69,10 @@ function StockDetailPage() {
             Company not found for ticker <strong>{ticker?.toUpperCase()}</strong>
           </p>
           <Link
-            to="/screener"
+            to="/"
             className="font-body text-sm text-accent hover:text-accent-hover transition-colors"
           >
-            Search for another company
+            Back to search
           </Link>
         </div>
       </div>
@@ -74,10 +88,10 @@ function StockDetailPage() {
             {error?.message || 'Something went wrong. Please try again.'}
           </p>
           <Link
-            to="/screener"
+            to="/"
             className="font-body text-sm text-accent hover:text-accent-hover transition-colors"
           >
-            Back to screener
+            Back to search
           </Link>
         </div>
       </div>
@@ -86,6 +100,7 @@ function StockDetailPage() {
 
   const changeValue = company?.change_percent ?? company?.changePercent;
   const isPositive = changeValue != null && Number(changeValue) >= 0;
+  const quoteFreshnessLabel = formatQuoteTimestamp(company?.quote_updated_at);
 
   const ActiveComponent = TABS.find((t) => t.key === activeTab)?.Component;
 
@@ -150,32 +165,40 @@ function StockDetailPage() {
                   {formatMarketCap(company.market_cap)}
                 </span>
               )}
+              {quoteFreshnessLabel && (
+                <span className="font-body text-xs px-2 py-0.5 rounded-full bg-elevated text-text-tertiary">
+                  {`Quote updated ${quoteFreshnessLabel}`}
+                </span>
+              )}
             </div>
           </>
         )}
 
         {/* ---- Tab Bar ---- */}
-        <ul
-          className="flex gap-0 border-b border-border overflow-x-auto mt-3 scrollbar-none"
-          role="tablist"
-        >
-          {TABS.map(({ key, label }) => (
-            <li key={key} className="shrink-0" role="presentation">
-              <button
-                role="tab"
-                aria-selected={activeTab === key}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                  activeTab === key
-                    ? 'text-accent border-accent'
-                    : 'text-text-secondary hover:text-text-primary border-transparent'
-                }`}
-                onClick={() => setActiveTab(key)}
-              >
-                {label}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="relative mt-3">
+          <ul
+            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none"
+            role="tablist"
+          >
+            {TABS.map(({ key, label }) => (
+              <li key={key} className="shrink-0" role="presentation">
+                <button
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                    activeTab === key
+                      ? 'text-accent border-accent'
+                      : 'text-text-secondary hover:text-text-primary border-transparent'
+                  }`}
+                  onClick={() => setActiveTab(key)}
+                >
+                  {label}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-base to-transparent sm:hidden" />
+        </div>
       </div>
 
       {/* ---- Tab Content ---- */}

@@ -3,22 +3,38 @@ from .models import Company, FinancialFact, MetricSnapshot
 
 
 class CompanyListSerializer(serializers.ModelSerializer):
+    quote_updated_at = serializers.DateTimeField(read_only=True)
+
     class Meta:
         model = Company
-        fields = ['ticker', 'name', 'sector', 'current_price', 'market_cap']
+        fields = [
+            'ticker',
+            'name',
+            'sector',
+            'industry',
+            'current_price',
+            'market_cap',
+            'quote_updated_at',
+        ]
 
 
 class CompanyDetailSerializer(serializers.ModelSerializer):
     pe_ratio = serializers.SerializerMethodField()
     dividend_yield = serializers.SerializerMethodField()
+    revenue_growth_yoy = serializers.SerializerMethodField()
+    operating_margin = serializers.SerializerMethodField()
+    net_margin = serializers.SerializerMethodField()
+    free_cash_flow = serializers.SerializerMethodField()
+    latest_revenue = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
         fields = [
             'ticker', 'name', 'cik', 'exchange', 'sector', 'industry', 'description', 'website',
             'current_price', 'market_cap', 'week_52_high', 'week_52_low',
-            'shares_outstanding', 'quote_updated_at',
-            'pe_ratio', 'dividend_yield',
+            'shares_outstanding', 'quote_updated_at', 'facts_updated_at',
+            'pe_ratio', 'dividend_yield', 'revenue_growth_yoy',
+            'operating_margin', 'net_margin', 'free_cash_flow', 'latest_revenue',
         ]
 
     def _snapshot(self, obj):
@@ -27,6 +43,18 @@ class CompanyDetailSerializer(serializers.ModelSerializer):
         except MetricSnapshot.DoesNotExist:
             return None
 
+    def _snapshot_value(self, obj, field_name):
+        snapshot = self._snapshot(obj)
+        value = getattr(snapshot, field_name, None) if snapshot else None
+        return float(value) if value is not None else None
+
+    def _latest_annual_fact_value(self, obj, metric_key):
+        fact = obj.financial_facts.filter(
+            metric_key=metric_key,
+            period_type=FinancialFact.PERIOD_ANNUAL,
+        ).order_by('-fiscal_year', '-period_end').first()
+        return float(fact.value) if fact else None
+
     def get_pe_ratio(self, obj):
         snapshot = self._snapshot(obj)
         return snapshot.pe_ratio if snapshot else None
@@ -34,6 +62,21 @@ class CompanyDetailSerializer(serializers.ModelSerializer):
     def get_dividend_yield(self, obj):
         snapshot = self._snapshot(obj)
         return snapshot.dividend_yield if snapshot else None
+
+    def get_revenue_growth_yoy(self, obj):
+        return self._snapshot_value(obj, 'revenue_growth_yoy')
+
+    def get_operating_margin(self, obj):
+        return self._snapshot_value(obj, 'operating_margin')
+
+    def get_net_margin(self, obj):
+        return self._snapshot_value(obj, 'net_margin')
+
+    def get_free_cash_flow(self, obj):
+        return self._snapshot_value(obj, 'free_cash_flow')
+
+    def get_latest_revenue(self, obj):
+        return self._latest_annual_fact_value(obj, 'revenue')
 
 
 class FinancialFactSerializer(serializers.ModelSerializer):

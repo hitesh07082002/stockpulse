@@ -551,14 +551,14 @@ Implementation order:
 
 ### 8.3 M3 — Public Read APIs and Stock Detail Shell
 
-**Status:** PENDING
+**Status:** DONE
 
 **Dimensions:**
-- 8.3.1 PENDING Build company list, company detail, and financials endpoints
-- 8.3.2 PENDING Build landing page search and stock detail app shell
-- 8.3.3 PENDING Build overview and financial tabs against canonical data
-- 8.3.4 PENDING Ship loading, empty, error, and no-data states with the first usable slice
-- 8.3.5 PENDING Required tests: API endpoint tests for company list/detail/financials (happy path, 404, empty result, pagination boundary), frontend unit tests for serializer output shape and loading/empty/error states, Playwright smoke for landing -> search -> stock detail
+- 8.3.1 DONE Company list, company detail, and financials endpoints are landed and hardened for search, pagination, 404s, and empty responses
+- 8.3.2 DONE Landing search and the stock detail shell are landed with the approved hierarchy, search-first flow, quote freshness, and mobile tab treatment
+- 8.3.3 DONE Overview and Financials now read from canonical company detail, snapshot, and financial facts data instead of legacy assumptions
+- 8.3.4 DONE Loading, empty, error, and no-data states ship with the first usable landing -> stock detail -> Financials slice
+- 8.3.5 DONE Required tests pass: API endpoint tests for company list/detail/financials, frontend unit tests for loading/empty/error states, and Playwright smoke for landing -> search -> stock detail -> Financials tab
 
 ### 8.4 M4 — Price, Valuation, and Screener
 
@@ -623,9 +623,9 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.2 M3 Gates (Public Read APIs + Stock Detail Shell)
 
-- 9.2.1 PENDING Playwright smoke: landing -> search -> stock detail -> Financials tab renders canonical data
-- 9.2.2 PENDING API endpoint tests: company list/detail/financials (happy path, 404, empty, pagination)
-- 9.2.3 PENDING Frontend unit tests: serializer output shape, loading/empty/error states
+- 9.2.1 DONE Playwright smoke: landing -> search -> stock detail -> Financials tab renders canonical data
+- 9.2.2 DONE API endpoint tests: company list/detail/financials (happy path, 404, empty, pagination)
+- 9.2.3 DONE Frontend unit tests: loading/empty/error states on landing-adjacent and stock-detail surfaces
 
 ### 9.3 M4 Gates (Price, Valuation, Screener)
 
