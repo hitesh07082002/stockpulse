@@ -1,4 +1,4 @@
-.PHONY: help dev up down lint lint-backend lint-frontend test test-backend test-frontend build build-frontend qa qa-smoke _clean
+.PHONY: help dev up down lint lint-backend lint-frontend test test-backend test-frontend coverage coverage-backend coverage-frontend build build-frontend qa qa-smoke _clean
 
 PYTHON ?= venv/bin/python
 PIP ?= $(PYTHON) -m pip
@@ -10,6 +10,7 @@ help:
 	@printf "  make dev         Start backend and frontend dev servers\n"
 	@printf "  make lint        Run backend/frontend checks\n"
 	@printf "  make test        Run backend/frontend unit tests\n"
+	@printf "  make coverage    Run backend/frontend coverage reports\n"
 	@printf "  make build       Build the frontend bundle\n"
 	@printf "  make qa          Run full Playwright suite\n"
 	@printf "  make qa-smoke    Run Playwright smoke suite\n"
@@ -43,6 +44,14 @@ test-backend:
 test-frontend:
 	$(FRONTEND_NPM) run test -- --run
 
+coverage: coverage-backend coverage-frontend
+
+coverage-backend:
+	$(PYTHON) -m pytest backend --cov=stocks --cov-config=backend/.coveragerc --cov-report=term-missing --cov-report=html:backend/htmlcov --cov-report=xml:backend/coverage.xml
+
+coverage-frontend:
+	$(FRONTEND_NPM) run coverage
+
 build: build-frontend
 
 build-frontend:
@@ -55,4 +64,4 @@ qa-smoke:
 	$(FRONTEND_NPM) run test:e2e:smoke
 
 _clean:
-	@python3 -c "from pathlib import Path; import shutil; paths = ['frontend/dist', '.pytest_cache', 'frontend/.vitest', 'frontend/playwright-report', 'frontend/test-results']; [shutil.rmtree(p, ignore_errors=True) if Path(p).is_dir() else Path(p).unlink(missing_ok=True) for p in paths]"
+	@python3 -c "from pathlib import Path; import shutil; paths = ['frontend/dist', '.pytest_cache', 'frontend/.vitest', 'frontend/playwright-report', 'frontend/test-results', 'frontend/coverage', 'backend/htmlcov', 'backend/coverage.xml']; [shutil.rmtree(p, ignore_errors=True) if Path(p).is_dir() else Path(p).unlink(missing_ok=True) for p in paths]"

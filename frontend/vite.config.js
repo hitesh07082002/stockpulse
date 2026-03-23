@@ -25,6 +25,13 @@ export default defineConfig(({ mode }) => {
       setupFiles: './src/test/setup.js',
       css: true,
       exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'html', 'json-summary'],
+        reportsDirectory: './coverage',
+        include: ['src/**/*.{js,jsx}'],
+        exclude: ['src/test/**', 'src/main.jsx'],
+      },
     },
   }
 })

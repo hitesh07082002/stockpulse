@@ -32,10 +32,12 @@ Every pull request to `main` should run these required checks in parallel where 
 
 1. backend lint and static checks
 2. backend tests
-3. frontend lint
-4. frontend tests
-5. frontend build
-6. end-to-end smoke
+3. backend coverage
+4. frontend lint
+5. frontend tests
+6. frontend coverage
+7. frontend build
+8. end-to-end smoke
 
 `main` should not be mergeable unless all required checks pass.
 
@@ -49,6 +51,7 @@ Recommended backend CI gates:
 - run `ruff` once it is added in M1
 - run Django config/system checks
 - run pytest against PostgreSQL 16, not SQLite
+- publish backend coverage outputs for the `stocks` app
 - fail on migration drift once migrations stabilize
 
 ## 3.3 Frontend CI
@@ -58,6 +61,7 @@ Recommended frontend CI gates:
 - run `npm ci` in [`frontend`](./frontend)
 - run ESLint
 - run Vitest once added in M1
+- publish V8 coverage outputs for `frontend/src`
 - run Vite production build
 
 ## 3.4 End-to-End Smoke
