@@ -1,7 +1,7 @@
 # StockPulse CI/CD Strategy
 
-**Status:** Target V1 delivery strategy  
-**Date:** Mar 22, 2026  
+**Status:** Implemented V1 deployment baseline  
+**Date:** Mar 24, 2026  
 **Source docs:** [`spec.md`](./spec.md), [`plan.md`](./plan.md), [`architecture.md`](./architecture.md), [`techstack.md`](./techstack.md)
 
 ## 1.0 Goals
@@ -12,7 +12,7 @@ That means:
 - every PR gets deterministic quality gates
 - `main` stays releasable
 - deployments use immutable artifacts
-- staging and production use the same build output
+- production deploys reuse immutable build output
 - database changes are rollout-safe
 - broken deploys are easy to detect and easy to roll back
 
@@ -109,11 +109,12 @@ These do not all need to block early feature work, but they should exist before 
 ## 4.1 Deployment Shape
 
 V1 deployment units:
-- `web`: Django API plus built frontend assets
-- `worker`: scheduled management-command runner
-- `postgres`: managed PostgreSQL 16
+- `nginx` on the host for TLS termination and reverse proxy
+- `web`: one Docker container running Django, Gunicorn, and WhiteNoise for both the API and the built React SPA
+- `postgres`: one Docker container running PostgreSQL 16 with a named volume
+- host cron entries that trigger scheduled Django management commands against `stockpulse-web`
 
-The web and worker deploys should be built from the same commit and, ideally, the same base image lineage.
+This is intentionally simpler than the earlier staging/worker split: one production node, one app container, one database container, and host-level scheduling.
 
 ## 4.2 Artifact Strategy
 
@@ -121,19 +122,21 @@ Build once, deploy many.
 
 Recommended approach:
 - build immutable Docker images tagged by commit SHA
-- produce a web image and a worker image from the same source revision
-- never rebuild different artifacts separately for staging and production
-- promote the same tested artifact forward
+- also publish `latest` for the production server's steady-state pull target
+- serve the React SPA from the same Django image via WhiteNoise
+- never rebuild the same revision twice for production
 
 ## 4.3 Environment Flow
 
-Recommended environment chain:
+Current V1 environment chain:
 
-1. pull request preview environment if the platform supports it
-2. staging auto-deploy from merged `main`
-3. production manual promotion from the already-tested staging artifact
+1. pull request CI on GitHub Actions
+2. merge or push to `main`
+3. GitHub Actions builds and pushes the production image to GHCR
+4. the deploy workflow SSHes to the server, runs `docker compose pull`, `docker compose up -d --remove-orphans`, then runs `python manage.py migrate --noinput`
+5. the workflow verifies `http://127.0.0.1:8000/api/health/`
 
-If preview environments are too heavy early on, staging plus production is still acceptable, but production should remain a manual promotion step.
+There is no separate staging environment in the current V1 deployment contract.
 
 Environment secrets now required for M6+:
 - `SECRET_KEY`
@@ -154,16 +157,14 @@ Use expand-contract migrations:
 - only remove old fields or paths after they are no longer needed
 
 Rules:
-- migrations must run automatically in staging before post-deploy smoke
 - production migrations should run in the deploy pipeline, not manually from a laptop
 - destructive schema changes require explicit rollback planning
 
 ## 4.5 Post-Deploy Verification
 
-Every staging and production deploy should run:
+Every production deploy should run:
 - health check against the backend
-- smoke test for landing, stock detail, and auth presence
-- a lightweight canary pass for console/runtime failures
+- manual smoke for landing, stock detail, auth presence, and AI streaming after the server is live
 
 For gstack, the most useful deployment-adjacent skills later are:
 - `setup-deploy`
@@ -193,17 +194,12 @@ Recommended workflows:
   - dependency audit
   - secret scanning hooks if needed
 
-- `.github/workflows/deploy-staging.yml`
-  - trigger on merge to `main`
-  - build/publish images
-  - run migrations
-  - deploy web and worker
-  - run post-deploy smoke
-
-- `.github/workflows/deploy-production.yml`
-  - manual promotion
-  - deploy previously built artifact
-  - run health check and canary verification
+- `.github/workflows/deploy.yml`
+  - trigger on push to `main`
+  - reuse the CI workflow as a prerequisite
+  - build and publish the Docker image to GHCR
+  - SSH to the production node
+  - pull, restart, migrate, and run the health check
 
 ## 6.0 Launch Bar
 
@@ -214,10 +210,10 @@ Before calling CI/CD launch-ready, StockPulse should have:
 - deterministic backend and frontend test runs
 - Playwright smoke in CI
 - immutable deploy artifacts
-- staging auto-deploy
-- production manual promotion
+- direct production deployment from `main`
 - automated migrations in deploy pipeline
-- post-deploy smoke and rollback path
+- health verification in the deploy pipeline
+- documented manual rollback path
 
 ## 7.0 Non-Goals
 

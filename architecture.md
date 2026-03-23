@@ -242,18 +242,32 @@ User 1 ───────────< AIUsageCounter (optional, anonymous ro
 
 ## Deployment Shape
 
-V1 deployment target is a standard three-part shape:
+V1 deployment target is one E2E Networks node with host-level nginx and a Docker Compose app stack:
 
 ```text
-web app (Django API + frontend assets)
-scheduled worker (management commands on a schedule)
-PostgreSQL 16
+E2E Networks node
+├── nginx (host)
+│   ├── terminates TLS
+│   └── reverse proxies to 127.0.0.1:8000
+├── docker compose
+│   ├── stockpulse-web
+│   │   ├── Gunicorn
+│   │   ├── Django API
+│   │   └── WhiteNoise-served React SPA
+│   └── stockpulse-db
+│       └── PostgreSQL 16 + named volume
+└── host cron
+    ├── update_prices + compute_snapshots every 15 minutes
+    ├── ingest_financials + compute_snapshots nightly
+    └── ingest_companies + enrich_company_metadata weekly
 ```
 
 No V1 components:
 - Redis
 - Celery workers
 - Celery beat
+- separate worker container
+- staging environment
 - WebSockets for market data
 - vector database
 

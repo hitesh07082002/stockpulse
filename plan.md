@@ -624,15 +624,15 @@ Eng review (Mar 23, 2026) with Codex outside voice identified simplification and
 
 ### 8.7 M7 — Hardening and Deploy
 
-**Status:** PENDING
+**Status:** IN_PROGRESS
 
 **Dimensions:**
-- 8.7.1 PENDING Add scheduled worker execution for management commands
-- 8.7.2 PENDING Add production settings, health checks, and deployment configuration
+- 8.7.1 DONE Add scheduled worker execution for management commands
+- 8.7.2 DONE Add production settings, health checks, and deployment configuration
 - 8.7.3 PENDING Complete accessibility, responsive, and performance polish
-- 8.7.4 PENDING Update README with setup, architecture, and screenshots
-- 8.7.5 PENDING Add staging auto-deploy, production manual promotion, automated migrations, post-deploy smoke checks, and documented rollback steps
-- 8.7.6 PENDING Required tests: operational timing verification for scheduled worker SLAs, post-deploy smoke for staging and production, health check endpoint tests
+- 8.7.4 DONE Update README with setup, architecture, and screenshots
+- 8.7.5 DONE Add direct production deploy from `main`, automated migrations, health checks, and documented rollback steps
+- 8.7.6 PENDING Required tests: operational timing verification for scheduled worker SLAs, first live production deployment verification, and health check endpoint test coverage
 
 ---
 
@@ -681,7 +681,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 ### 9.6 M7 Gates (Hardening + Deploy)
 
 - 9.6.1 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
-- 9.6.2 PENDING Staging and production deployment workflows prove build-once/promote-forward behavior with post-deploy health verification
+- 9.6.2 PENDING Direct production deployment from `main` proves immutable artifact delivery, automated migration, and post-deploy health verification
 - 9.6.3 PENDING Protected-branch rules keep `main` merge-safe
 
 ---
@@ -694,7 +694,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 - [ ] 10.2 Core financial metrics render from canonical normalized SEC data
 - [ ] 10.3 Quote and price chart data use shared cached sources and expose freshness clearly
 - [ ] 10.4 Screener performance is driven by `MetricSnapshot`, not heavy request-time joins
-- [ ] 10.5 AI copilot answers per-company questions and bounded follow-up turns using structured StockPulse data only, and admits uncertainty when coverage is thin
+- [ ] 10.5 AI copilot answers per-company questions and bounded follow-up turns using structured StockPulse data as primary grounding, uses general financial knowledge only as explanatory context, and admits uncertainty when coverage is thin
 - [ ] 10.6 Users can register, log in, refresh auth state, and sign in with Google using secure cookie-based auth
 - [ ] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
 - [ ] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
@@ -704,7 +704,7 @@ Current status: the audit artifact at `docs/audits/sp500-launch-coverage-2026-03
 - [ ] 10.11 The scheduled-worker job model meets the documented V1 timing SLAs, or the plan is explicitly revised before launch
 - [ ] 10.12 Google sign-in and anonymous-to-authenticated AI upgrade flows are explicitly covered by launch smoke tests
 - [ ] 10.13 CI protects `main` with required backend, frontend, and smoke checks
-- [ ] 10.14 CD supports staging auto-deploy, production manual promotion, automated migrations, and documented rollback
+- [ ] 10.14 CD supports direct production deployment from `main`, automated migrations, and documented rollback
 
 Launch-critical metric set for 10.10:
 - revenue
