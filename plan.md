@@ -614,6 +614,22 @@ Implementation order:
 - 8.6.8 DONE Prompt and response tests cover groundedness and sparse-data honesty through the structured-context contract and provider event normalization
 - 8.6.9 DONE Required tests pass: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
 
+### 8.6.10 M6 Post-Review Simplification
+
+**Status:** PENDING
+
+Eng review (Mar 23, 2026) with Codex outside voice identified simplification and quality improvements. These land as a pre-M7 cleanup pass.
+
+**Dimensions:**
+- 8.6.10.1 PENDING Switch default AI model from `claude-sonnet-4` to `claude-haiku-4-5`. Sonnet stays configurable via `ANTHROPIC_MODEL` env var. Cost drops ~10x.
+- 8.6.10.2 PENDING Remove `AIBudgetDay` model and all reserve/reconcile budget logic (`reserve_budget`, `reconcile_budget`, `BudgetReservation`). Quota system (`AIUsageCounter`) remains and enforces 10 anon / 50 authenticated requests per day. Burst limit (3/min per IP) remains. Cost safety is enforced by loading limited credits on the provider API key, not in-app.
+- 8.6.10.3 PENDING Rewrite system prompt for output quality: analysis framework (trend detection, period comparisons, ratio interpretation), structured output (markdown headers, bold numbers, tables), analyst voice, and clear guardrails (never predict prices, admit uncertainty on sparse data).
+- 8.6.10.4 PENDING Relax strict DB-only grounding: the copilot uses StockPulse data as its primary source but may use general financial knowledge to explain WHY numbers moved. The prompt must still cite StockPulse data and distinguish it from general context.
+- 8.6.10.5 PENDING Trim context assembly: fix the 2x over-fetch multiplier in `build_structured_context`, remove null values from context JSON, compact serialization.
+- 8.6.10.6 PENDING Add `remark-gfm` to frontend dependencies so markdown tables render in AI responses.
+- 8.6.10.7 PENDING Update tests: remove dead budget tests, add tests for new prompt sections, authenticated quota path (50/day), provider timeout during streaming, Haiku config, sparse company context, and context null-trimming.
+- 8.6.10.8 PENDING Update `spec.md`, `architecture.md`, and `feature.md` to reflect grounding and budget changes.
+
 ### 8.7 M7 — Hardening and Deploy
 
 **Status:** PENDING
@@ -732,10 +748,10 @@ For 10.10, derived metrics in the launch-critical set count as covered only when
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
-| Adversarial | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | CLEAR | initial architecture fixes + M6 copilot contract locked |
+| Adversarial | `/codex review` | Independent 2nd opinion | 1 | ISSUES_FOUND | 10 findings, 3 accepted (grounding, budget math, remark-gfm), 7 overridden by user |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | CLEAR | M6 simplification: 8 decisions, Haiku default, budget removal, prompt rewrite, context trim |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL) | score: 7/10 → 9/10, 6 decisions |
 
-- **CODEX (plan review):** 5 P0 + 4 P1 + 1 P2 findings. Key issues addressed: verification gate structure, quote dependency contradiction, AI budget race condition, valuation guardrails, auth account linking.
+- **CODEX (outside voice, Mar 23):** 10 findings. Caught: missing `remark-gfm` (accepted), cookie-reset budget bypass math (acknowledged — user controls spend via API key credits), strict grounding contract break (user override — wants general knowledge). Overridden: strategic priority (user wants prompt work before M7), budget removal (API key credit limit is the real cap).
 - **UNRESOLVED:** 0
-- **VERDICT:** ENG + DESIGN CLEARED — ready to implement.
+- **VERDICT:** ENG + DESIGN CLEARED — M6.10 simplification ready for implementation, then M7.
