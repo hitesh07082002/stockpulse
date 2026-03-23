@@ -107,12 +107,12 @@ The primary user journey is simple and fast:
 - 3.3.1 DONE AI is visible to all users.
 - 3.3.2 DONE Anonymous users get 10 prompts per day per signed session key, with a soft IP backstop.
 - 3.3.3 DONE Authenticated users get 50 prompts per day per account.
-- 3.3.4 DONE A hard global daily budget cap, configured by env var, protects spend if usage spikes.
+- 3.3.4 DONE Spend safety is handled operationally through provider credits and model choice, not an in-app daily budget cap.
 - 3.3.5 DONE After the anonymous quota is exhausted, the UI offers sign-in for the 50-prompt authenticated allowance that day.
 - 3.3.6 DONE Anonymous AI identity is issued as a signed `anon_ai_id` cookie on first copilot use, rotates every 30 days, and is reissued if missing or invalid. Anonymous daily quota enforcement is best-effort: clearing cookies resets the identity. The per-minute IP backstop limits abuse velocity but does not enforce a hard daily cap on anonymous users.
 - 3.3.7 DONE A short-window burst limit of 3 prompts per minute per IP applies alongside the daily quotas. This is enforced via middleware rate limiting (e.g. `django-ratelimit`), not via `AIUsageCounter`.
-- 3.3.8 DONE Global AI spend is enforced through database-backed daily budget accounting, not by checking an external dashboard.
-- 3.3.9 DONE When the daily cap is hit, new AI requests are rejected immediately with a clear over-budget product state until the next daily window.
+- 3.3.8 DONE The shipped rewrite does not keep an in-app spend ledger; quota enforcement remains product behavior and provider credits remain the operational cost backstop.
+- 3.3.9 DONE Provider misconfiguration or exhaustion must surface as an honest unavailable state, not as a fake in-app budget message.
 
 ### 3.4 Authentication UX
 
@@ -221,14 +221,6 @@ AIUsageCounter
 ├── day (America/New_York calendar day)
 ├── request_count
 └── updated_at
-
-AIBudgetDay
-├── day (America/New_York calendar day)
-├── request_count
-├── reserved_cost_usd
-├── actual_cost_usd
-├── hard_stop_triggered_at
-└── updated_at
 ```
 
 **Dimensions:**
@@ -238,11 +230,11 @@ AIBudgetDay
 - 4.3.1 DONE Range caches include explicit sampling granularity so long-range payload size is bounded deterministically.
 - 4.4 DONE Authentication uses Django's built-in user model plus secure JWT cookie transport.
 - 4.5 DONE `AIUsageCounter` supports the V1 daily quotas of 10 anonymous prompts and 50 authenticated prompts without requiring Redis in V1.
-- 4.6 DONE `AIBudgetDay` tracks reserved and reconciled daily AI spend so the global cap is enforceable inside the product.
-- 4.7 DONE The daily AI hard cap is configured via environment variable and enforced before model invocation.
+- 4.6 DONE AI cost safety is handled operationally through provider credit limits and model selection, not an in-app spend ledger.
+- 4.7 DONE There is no in-app daily AI budget table in the shipped rewrite; cost control is external to request handling.
 - 4.8 DONE Raw SEC payloads are stored in a separate cold audit model, not on the hot `Company` row.
 - 4.9 DONE Raw SEC payload retention is bounded: keep the latest successful payload per `company + source` and the most recent failed payload for debugging.
-- 4.10 DONE AI quotas and the daily AI budget both reset on the `America/New_York` calendar day.
+- 4.10 DONE AI quotas reset on the `America/New_York` calendar day.
 
 ---
 
@@ -396,9 +388,9 @@ The AI copilot only sees structured StockPulse data.
 - 6.3.4 DONE SSE streaming is part of V1 because it materially improves perceived speed
 - 6.3.5 DONE AI access policy checks anonymous or authenticated quota before model invocation
 - 6.3.6 DONE Anonymous requests are identified by a signed `anon_ai_id` cookie and still respect the per-minute IP burst limit
-- 6.3.7 DONE Each copilot request reserves budget before model invocation and reconciles actual spend after completion. Budget reservation must be atomic — use a single `UPDATE ... WHERE reserved_cost_usd + new_cost <= cap` query or `SELECT FOR UPDATE` to prevent concurrent requests from exceeding the daily cap.
-- 6.3.8 DONE If the hard daily budget cap is already exhausted, the request is denied before any model call is attempted
-- 6.3.9 DONE Daily quota and budget accounting use the `America/New_York` calendar day, not the requester's local timezone
+- 6.3.7 DONE Each copilot request enforces quota before model invocation. Cost control is handled outside the request path through provider credits and model choice, not an in-app ledger.
+- 6.3.8 DONE If the provider is unavailable or misconfigured, the request is denied before any model call is attempted.
+- 6.3.9 DONE Daily quota accounting uses the `America/New_York` calendar day, not the requester's local timezone
 - 6.3.10 DONE M6 uses a tiny provider seam: one orchestration path with provider-specific adapters at the edge, not provider logic scattered through views or prompts
 - 6.3.11 DONE Anthropic is the production-default provider for V1. Gemini may be wired through the same adapter seam for local/dev/staging so low-cost or free development remains possible without changing the core architecture.
 - 6.3.12 DONE The context assembler produces structured company data first and only renders provider-specific prompt/input text at the edge
@@ -411,7 +403,7 @@ The AI copilot only sees structured StockPulse data.
 - 6.3.19 DONE V1 copilot supports bounded ephemeral follow-up context: the current message plus up to the 6 most recent prior turns from the active browser session. No server-side conversation persistence or saved chats are added.
 - 6.3.20 DONE Provider selection is environment-configured and stable for the lifetime of a request. V1 does not auto-fail over between Anthropic and Gemini mid-request.
 - 6.3.21 DONE The AI request path stays performance-bounded: one company/snapshot load plus bounded annual and quarterly fact queries. Prompt/context assembly must not grow with full filing history or arbitrary metric dumps.
-- 6.3.22 DONE Failure handling is explicit: invalid input, quota exhaustion, budget exhaustion, provider unavailable, timeout, and interrupted stream all map to honest user-facing errors. If text has already streamed, the partial answer may remain visible, but the stream must still terminate with a final `error` or `done` frame.
+- 6.3.22 DONE Failure handling is explicit: invalid input, quota exhaustion, provider unavailable, timeout, and interrupted stream all map to honest user-facing errors. If text has already streamed, the partial answer may remain visible, but the stream must still terminate with a final `error` or `done` frame.
 - 6.3.23 DONE User prompts are untrusted input. The assistant may reason only over the structured StockPulse context for the requested ticker and must not imply access to raw filing text, hidden data, or future prices.
 
 ### 6.4 Authentication Architecture
@@ -490,7 +482,7 @@ POST /api/companies/{ticker}/copilot/
 - 7.2 DONE Auth endpoints exist for registration, login, backend-managed Google sign-in start/callback, cookie-based refresh, and logout.
 - 7.3 DONE Price responses include cache freshness metadata.
 - 7.4 DONE Financial responses expose only canonical normalized facts.
-- 7.5 DONE Copilot responses must enforce anonymous or authenticated quota and global budget before invoking the model.
+- 7.5 DONE Copilot responses must enforce anonymous or authenticated quota before invoking the model.
 
 ---
 
@@ -604,31 +596,31 @@ Implementation order:
 **Status:** DONE
 
 **Dimensions:**
-- 8.6.1 DONE M6 is implemented in two internal workstreams: `M6A core copilot pipeline` and `M6B quota/budget/upgrade UX`
+- 8.6.1 DONE M6 is implemented in two internal workstreams: `M6A core copilot pipeline` and `M6B quota/upgrade UX`
 - 8.6.2 DONE `M6A` builds one thin API/view layer, one copilot orchestration service, one provider adapter seam, and a structured context assembler sourced from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
-- 8.6.3 DONE `M6A` includes the real backend enforcement path from day one: signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, burst backstop, atomic daily budget reserve/reconcile via `AIBudgetDay`, and honest SSE / error responses
+- 8.6.3 DONE `M6A` includes the real backend enforcement path from day one: signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, burst backstop, and honest SSE / error responses
 - 8.6.4 DONE `M6A` ships SSE streaming with a small canonical event schema (`meta`, `text`, `error`, `done`), keeping provider-specific event differences out of the frontend
-- 8.6.5 DONE `M6B` focuses on frontend upgrade UX, anonymous quota exhaustion -> sign-in continuation, richer empty/error/budget states, and non-critical AI polish
+- 8.6.5 DONE `M6B` focuses on frontend upgrade UX, anonymous quota exhaustion -> sign-in continuation, richer empty/error states, and non-critical AI polish
 - 8.6.6 DONE `M6A` carries bounded follow-up history from the active client session without adding saved conversations or server-side chat persistence
 - 8.6.7 DONE `M6A` enforces config-driven provider selection, bounded query/prompt assembly, and explicit timeout / interrupted-stream handling
 - 8.6.8 DONE Prompt and response tests cover groundedness and sparse-data honesty through the structured-context contract and provider event normalization
-- 8.6.9 DONE Required tests pass: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
+- 8.6.9 DONE Required tests pass: API tests for copilot (anonymous quota, authenticated quota, burst limit, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, prompt structure, sparse context handling, and provider timeout; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
 
 ### 8.6.10 M6 Post-Review Simplification
 
-**Status:** PENDING
+**Status:** DONE
 
 Eng review (Mar 23, 2026) with Codex outside voice identified simplification and quality improvements. These land as a pre-M7 cleanup pass.
 
 **Dimensions:**
-- 8.6.10.1 PENDING Switch default AI model from `claude-sonnet-4` to `claude-haiku-4-5`. Sonnet stays configurable via `ANTHROPIC_MODEL` env var. Cost drops ~10x.
-- 8.6.10.2 PENDING Remove `AIBudgetDay` model and all reserve/reconcile budget logic (`reserve_budget`, `reconcile_budget`, `BudgetReservation`). Quota system (`AIUsageCounter`) remains and enforces 10 anon / 50 authenticated requests per day. Burst limit (3/min per IP) remains. Cost safety is enforced by loading limited credits on the provider API key, not in-app.
-- 8.6.10.3 PENDING Rewrite system prompt for output quality: analysis framework (trend detection, period comparisons, ratio interpretation), structured output (markdown headers, bold numbers, tables), analyst voice, and clear guardrails (never predict prices, admit uncertainty on sparse data).
-- 8.6.10.4 PENDING Relax strict DB-only grounding: the copilot uses StockPulse data as its primary source but may use general financial knowledge to explain WHY numbers moved. The prompt must still cite StockPulse data and distinguish it from general context.
-- 8.6.10.5 PENDING Trim context assembly: fix the 2x over-fetch multiplier in `build_structured_context`, remove null values from context JSON, compact serialization.
-- 8.6.10.6 PENDING Add `remark-gfm` to frontend dependencies so markdown tables render in AI responses.
-- 8.6.10.7 PENDING Update tests: remove dead budget tests, add tests for new prompt sections, authenticated quota path (50/day), provider timeout during streaming, Haiku config, sparse company context, and context null-trimming.
-- 8.6.10.8 PENDING Update `spec.md`, `architecture.md`, and `feature.md` to reflect grounding and budget changes.
+- 8.6.10.1 DONE Switch default Anthropic model to `claude-haiku-4-5`, while keeping `ANTHROPIC_MODEL` configurable for overrides such as Sonnet.
+- 8.6.10.2 DONE Remove `AIBudgetDay` and all reserve/reconcile budget logic. Quota system (`AIUsageCounter`) remains and enforces 10 anonymous / 50 authenticated requests per day, with the 3/minute IP burst limit still in place.
+- 8.6.10.3 DONE Rewrite the system prompt for output quality: analysis framework, more natural analyst voice, markdown structure, and explicit anti-speculation guardrails.
+- 8.6.10.4 DONE Relax strict DB-only grounding: the copilot uses StockPulse data as its primary source but may use general financial knowledge to explain why the numbers matter, while still distinguishing product data from general explanation.
+- 8.6.10.5 DONE Trim context assembly: remove the 2x over-fetch multiplier, drop null values from the serialized context, and compact prompt payloads.
+- 8.6.10.6 DONE Render richer AI markdown safely without the brittle bare-package import path that broke Vite dev resolution.
+- 8.6.10.7 DONE Update tests for the simplified AI path: remove dead budget assertions, add prompt/context coverage, sparse-context coverage, authenticated quota coverage, provider timeout coverage, and Haiku default coverage.
+- 8.6.10.8 DONE Update `spec.md`, `architecture.md`, and `feature.md` to reflect grounding and budget changes.
 
 ### 8.7 M7 — Hardening and Deploy
 
@@ -679,7 +671,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.5 M6 Gates (AI Copilot)
 
-- 9.5.1 DONE Quota and budget enforcement tests pass: anonymous quota, authenticated quota, burst limit, hard budget exhaustion, and atomic reserve/reconcile under concurrent requests
+- 9.5.1 DONE Quota enforcement tests pass: anonymous quota, authenticated quota, and burst limit
 - 9.5.2 DONE Context assembly tests pass: stable `identity` / `freshness` / `snapshot` / `annual_series` / `quarterly_series` / `coverage` sections, bounded annual+quarterly windows, bounded recent-turn history, and sparse-data honesty
 - 9.5.3 DONE Provider adapter tests pass: Anthropic and Gemini responses normalize into the canonical `meta` / `text` / `error` / `done` stream contract without leaking provider-native event shapes to the frontend
 - 9.5.4 DONE Failure-mode tests pass: invalid JSON, empty prompt, oversized prompt, unknown ticker, provider unavailable, provider timeout, and interrupted stream semantics

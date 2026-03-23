@@ -104,10 +104,10 @@ Already in place:
 - M5 API coverage for register/login/refresh/logout and Google auto-linking, plus smoke coverage for register/login/logout and Google sign-in
 - structured AI context built from company metadata, freshness, snapshot, 10 annual periods, 8 recent quarters, and explicit coverage signals
 - canonical SSE copilot stream events: `meta`, `text`, `error`, and `done`
-- signed anonymous AI identity with 10/day anonymous quota, 50/day authenticated quota, 3/minute IP burst limit, and database-backed daily budget reserve/reconcile
+- signed anonymous AI identity with 10/day anonymous quota, 50/day authenticated quota, and a 3/minute IP burst limit
 - bounded follow-up memory from the active client session without saved chats
 - provider seam with Anthropic as the production default and Gemini available for local/dev/staging
-- M6 API coverage for copilot quota/budget/failure semantics, provider normalization, frontend AI tab state coverage, and smoke coverage for prompt submit plus anonymous -> sign-in upgrade flow
+- M6 API coverage for copilot quota/failure semantics, provider normalization, frontend AI tab state coverage, and smoke coverage for prompt submit plus anonymous -> sign-in upgrade flow
 
 Latest verification pass:
 - `make lint`
@@ -150,8 +150,8 @@ AI provider config in local dev:
 - optional: set `AI_PROVIDER=gemini` explicitly; otherwise `DEBUG` auto-selects Gemini when `GEMINI_API_KEY` is present
 - default local Gemini model is `GEMINI_MODEL=gemini-2.5-flash`
 - grounded Gemini copilot requests default to `GEMINI_THINKING_BUDGET=0` so hidden reasoning does not burn the response budget on this structured Q&A path
-- Anthropic remains the production-default provider and can be selected with `AI_PROVIDER=anthropic`
-- AI budget and pricing are env-driven: `AI_DAILY_BUDGET_USD`, `GEMINI_INPUT_COST_PER_MTOK_USD`, `GEMINI_OUTPUT_COST_PER_MTOK_USD`, `ANTHROPIC_INPUT_COST_PER_MTOK_USD`, `ANTHROPIC_OUTPUT_COST_PER_MTOK_USD`
+- Anthropic remains the production-default provider and defaults to Haiku 4.5; override with `AI_PROVIDER=anthropic` plus `ANTHROPIC_MODEL` if needed
+- model pricing env vars remain configurable: `GEMINI_INPUT_COST_PER_MTOK_USD`, `GEMINI_OUTPUT_COST_PER_MTOK_USD`, `ANTHROPIC_INPUT_COST_PER_MTOK_USD`, `ANTHROPIC_OUTPUT_COST_PER_MTOK_USD`
 
 If you need a different backend origin for local work, set `VITE_API_BASE_URL`.
 
