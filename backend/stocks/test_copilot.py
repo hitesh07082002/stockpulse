@@ -1,19 +1,23 @@
+import hashlib
 import json
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.cache import cache
+from django.db import connection
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from stocks.ai_context import build_structured_context
+from stocks.ai_context import build_structured_context, render_system_prompt
 from stocks.ai_providers import (
     AnthropicProvider,
     GeminiProvider,
     ProviderEvent,
+    ProviderTimeoutError,
     ProviderUsage,
     _extract_gemini_text_delta,
     _extract_gemini_usage,
@@ -27,11 +31,6 @@ class FakeProvider:
 
     def ensure_configured(self):
         return None
-
-    def calculate_actual_cost_usd(self, usage):
-        if usage is None:
-            return Decimal("0.0000")
-        return Decimal("0.0500")
 
     def stream_response(self, *, system_prompt, conversation):
         assert "STRUCTURED_CONTEXT_JSON" in system_prompt
@@ -138,6 +137,16 @@ def collect_stream(response):
     )
 
 
+def contains_none(value):
+    if value is None:
+        return True
+    if isinstance(value, dict):
+        return any(contains_none(item) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_none(item) for item in value)
+    return False
+
+
 @pytest.mark.django_db
 def test_build_structured_context_has_stable_sections(company):
     context = build_structured_context(company)
@@ -155,6 +164,85 @@ def test_build_structured_context_has_stable_sections(company):
     assert context["quarterly_series"][-1]["fiscal_quarter"] == 4
     assert context["coverage"]["annual_period_count"] == 4
     assert context["coverage"]["quarterly_period_count"] == 4
+
+
+@pytest.mark.django_db
+def test_build_structured_context_sparse_company():
+    sparse_company = Company.objects.create(
+        cik="0000320193",
+        ticker="AAPL",
+        name="Apple Inc.",
+    )
+
+    context = build_structured_context(sparse_company)
+
+    assert context["identity"] == {
+        "ticker": "AAPL",
+        "name": "Apple Inc.",
+    }
+    assert context["freshness"] == {"has_quote": False}
+    assert context["snapshot"] == {}
+    assert context["annual_series"] == []
+    assert context["quarterly_series"] == []
+    assert context["coverage"]["annual_period_count"] == 0
+    assert context["coverage"]["quarterly_period_count"] == 0
+    assert context["coverage"]["is_sparse"] is True
+
+
+@pytest.mark.django_db
+def test_build_structured_context_omits_null_values():
+    trim_company = Company.objects.create(
+        cik="0001652044",
+        ticker="GOOG",
+        name="Alphabet Inc.",
+        sector="Technology",
+    )
+    MetricSnapshot.objects.create(
+        company=trim_company,
+        pe_ratio=Decimal("18.20"),
+    )
+    FinancialFact.objects.create(
+        company=trim_company,
+        metric_key="revenue",
+        period_type="annual",
+        fiscal_year=2024,
+        value=Decimal("350000000000"),
+        period_end=date(2024, 12, 31),
+        filed_date=date(2025, 2, 1),
+        source_form="10-K",
+    )
+
+    context = build_structured_context(trim_company)
+
+    assert "exchange" not in context["identity"]
+    assert "description" not in context["identity"]
+    assert "website" not in context["identity"]
+    assert "current_price" not in context["identity"]
+    assert context["snapshot"] == {"pe_ratio": 18.2}
+    assert "quote_updated_at" not in context["freshness"]
+    assert "facts_updated_at" not in context["freshness"]
+    assert "quote_age_hours" not in context["freshness"]
+    assert "facts_age_hours" not in context["freshness"]
+    assert "fiscal_quarter" not in context["annual_series"][0]
+    assert context["annual_series"][0]["metrics"] == {"revenue": 350000000000.0}
+    assert contains_none(context) is False
+
+
+@pytest.mark.django_db
+def test_system_prompt_contains_analysis_framework(company):
+    prompt = render_system_prompt(build_structured_context(company))
+
+    assert "sharp equity research analyst" in prompt
+    assert "industry trends, macro context, competitive dynamics, and general finance principles" in prompt
+    assert "Focus on trend detection, period comparisons, ratio interpretation" in prompt
+    assert "Use markdown with short headers, **bold** key numbers, and tables" in prompt
+    assert "Never predict future stock prices or guarantee outcomes." in prompt
+    assert "Be explicit about which claims come from StockPulse data and which come from general financial knowledge." in prompt
+    assert "STRUCTURED_CONTEXT_JSON:\n{" in prompt
+
+
+def test_haiku_is_default_model():
+    assert settings.ANTHROPIC_MODEL == "claude-haiku-4-5-20251001"
 
 
 def test_gemini_chunk_normalization_extracts_delta_and_usage():
@@ -314,6 +402,45 @@ def test_copilot_endpoint_enforces_anonymous_daily_quota(api_client, company, mo
 
 
 @pytest.mark.django_db
+def test_copilot_endpoint_enforces_authenticated_daily_quota(api_client, company, monkeypatch):
+    User = get_user_model()
+    user = User.objects.create_user(
+        username="quota-user",
+        email="quota@example.com",
+        password="StockPulse123!",
+    )
+    AIUsageCounter.objects.create(
+        usage_key_hash=hashlib.sha256(f"user:{user.pk}".encode("utf-8")).hexdigest(),
+        user=user,
+        day=current_ai_day(),
+        request_count=49,
+    )
+    api_client.force_authenticate(user=user)
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: FakeProvider())
+
+    fiftieth = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Prompt number fifty"},
+        format="json",
+    )
+    collect_stream(fiftieth)
+
+    fifty_first = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Prompt number fifty one"},
+        format="json",
+    )
+
+    assert fifty_first.status_code == 429
+    payload = fifty_first.json()
+    assert payload["code"] == "daily_limit_reached"
+    assert payload["limit"] == 50
+    assert payload["used"] == 50
+    assert payload["remaining"] == 0
+    assert payload["needs_auth_upgrade"] is False
+
+
+@pytest.mark.django_db
 @override_settings(AI_BURST_LIMIT_PER_MINUTE=1)
 def test_copilot_endpoint_enforces_burst_limit(api_client, company, monkeypatch):
     monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: FakeProvider())
@@ -377,6 +504,49 @@ def test_copilot_endpoint_rejects_history_above_bound(api_client, company, monke
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
+
+
+@pytest.mark.django_db
+def test_copilot_endpoint_handles_provider_timeout_during_stream(api_client, company, monkeypatch):
+    class TimeoutProvider:
+        name = "anthropic"
+
+        def ensure_configured(self):
+            return None
+
+        def stream_response(self, *, system_prompt, conversation):
+            yield ProviderEvent(type="text", text="Partial answer")
+            raise ProviderTimeoutError("Anthropic timed out.")
+
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: TimeoutProvider())
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Why did margins change?"},
+        format="json",
+    )
+    stream_text = collect_stream(response)
+
+    assert response.status_code == 200
+    assert '"type": "text"' in stream_text
+    assert '"type": "error"' in stream_text
+    assert '"code": "provider_timeout"' in stream_text
+    assert '"partial": true' in stream_text
+
+
+@pytest.mark.django_db
+def test_copilot_stream_without_budget_tracking(api_client, company, monkeypatch):
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: FakeProvider())
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Summarize the balance sheet."},
+        format="json",
+    )
+    collect_stream(response)
+
+    assert response.status_code == 200
+    assert "stocks_aibudgetday" not in connection.introspection.table_names()
 
 
 @pytest.mark.django_db
