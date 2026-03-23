@@ -28,12 +28,24 @@ def test_register_sets_auth_cookies_and_session(api_client):
 
     assert payload["is_authenticated"] is True
     assert payload["user"]["email"] == "oracle@example.com"
+    assert payload["has_refresh_session"] is True
     assert "access_token" in response.cookies
     assert "refresh_token" in response.cookies
 
     session_response = api_client.get("/api/auth/session/")
     assert session_response.status_code == 200
     assert session_response.json()["is_authenticated"] is True
+    assert session_response.json()["has_refresh_session"] is True
+
+
+@pytest.mark.django_db
+def test_anonymous_session_reports_no_refresh_session(api_client):
+    response = api_client.get("/api/auth/session/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_authenticated"] is False
+    assert payload["has_refresh_session"] is False
 
 
 @pytest.mark.django_db

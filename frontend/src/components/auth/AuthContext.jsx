@@ -19,6 +19,7 @@ const FALLBACK_SESSION = {
     current_daily: 10,
   },
   google_signin_available: true,
+  has_refresh_session: false,
 };
 
 function clearAuthParams(navigate, location) {
@@ -53,7 +54,7 @@ export function AuthProvider({ children }) {
 
   async function hydrateSession({ allowRefresh = true } = {}) {
     const liveSession = await fetchAuthSession();
-    if (!liveSession.is_authenticated && allowRefresh) {
+    if (!liveSession.is_authenticated && liveSession.has_refresh_session && allowRefresh) {
       try {
         const refreshedSession = await refreshAuth();
         setSession(refreshedSession);
