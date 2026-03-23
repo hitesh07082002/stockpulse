@@ -1,5 +1,15 @@
 # Company Metadata Ingestion Plan
 
+## Status
+
+Implemented on `rewrite/v1`.
+
+Current state:
+- `python manage.py enrich_company_metadata` exists
+- `backend/stocks/data/company_metadata_overrides.csv` is tracked in the repo
+- the first full local backfill reached `499/500` descriptions, `499/500` websites, and `500/500` exchanges
+- the remaining gap is now override curation, not pipeline design
+
 ## Goal
 
 Populate `Company.description`, `Company.website`, and `Company.exchange` for the full S&P 500 universe without mixing this work into the SEC financial normalization pipeline.
@@ -48,7 +58,7 @@ Reasons:
 
 ### 3. Curated override file
 
-Add a curated repo file for exceptions:
+The curated repo file for exceptions lives at:
 - `backend/stocks/data/company_metadata_overrides.csv`
 
 Use it when:
@@ -64,7 +74,7 @@ Override precedence:
 
 ## Command Design
 
-Add a dedicated management command:
+The dedicated management command is:
 
 ```bash
 python manage.py enrich_company_metadata
@@ -136,7 +146,7 @@ Recommended cadence:
 
 This scheduling should be wired during M7 when cron or `systemd` timers are added.
 
-## Recommended Execution Order
+## Execution Order Used
 
 1. Add `enrich_company_metadata`
 2. Add `company_metadata_overrides.csv`

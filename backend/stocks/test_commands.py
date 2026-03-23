@@ -1,11 +1,14 @@
 import csv
 from datetime import date
 from decimal import Decimal
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from django.core.management.base import CommandError
 from django.core.management import call_command
 
+from stocks.management.commands import enrich_company_metadata as enrich_company_metadata_command
 from stocks.management.commands import ingest_financials as ingest_financials_command
 from stocks.management.commands import update_prices as update_prices_command
 from stocks.models import Company, FinancialFact, IngestionRun, RawSecPayload
@@ -14,6 +17,18 @@ from stocks.models import Company, FinancialFact, IngestionRun, RawSecPayload
 SEED_25_CSV = (
     Path(__file__).resolve().parent / "data" / "sp500_seed_25.csv"
 )
+
+
+class _FakeMetadataTicker:
+    def __init__(self, payload=None, error=None):
+        self._payload = payload or {}
+        self._error = error
+
+    @property
+    def info(self):
+        if self._error:
+            raise self._error
+        return self._payload
 
 
 def test_seed_fixture_contains_25_rows():
@@ -92,6 +107,303 @@ def test_ingest_companies_updates_existing_company_when_cik_matches_new_ticker(t
     assert Company.objects.count() == 1
     assert Company.objects.filter(ticker="FOXA", cik="1754301").exists()
     assert not Company.objects.filter(ticker="FOX").exists()
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_updates_single_ticker_from_yahoo(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="MSFT",
+        name="Microsoft Corporation",
+        cik="0000789019",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Microsoft builds software and cloud services.",
+                "website": "www.microsoft.com/",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    stdout = StringIO()
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "MSFT",
+        "--csv",
+        str(override_path),
+        stdout=stdout,
+    )
+
+    company.refresh_from_db()
+
+    assert company.description == "Microsoft builds software and cloud services."
+    assert company.website == "https://www.microsoft.com"
+    assert company.exchange == "NASDAQ"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.status == IngestionRun.STATUS_SUCCESS
+    assert set(run.details_json["updated_fields"]) == {"description", "website", "exchange"}
+    assert run.details_json["sources"] == {
+        "description": "yahoo",
+        "website": "yahoo",
+        "exchange": "yahoo",
+    }
+    assert "Coverage — descriptions: 1/1, websites: 1/1, exchanges: 1/1" in stdout.getvalue()
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_respects_override_precedence(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="AAPL",
+        name="Apple Inc.",
+        cik="0000320193",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n"
+        "AAPL,Curated description,investor.apple.com,NYSE\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Yahoo description",
+                "website": "apple.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    call_command("enrich_company_metadata", "--ticker", "AAPL", "--csv", str(override_path))
+
+    company.refresh_from_db()
+
+    assert company.description == "Curated description"
+    assert company.website == "https://investor.apple.com"
+    assert company.exchange == "NYSE"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.details_json["sources"] == {
+        "description": "override",
+        "website": "override",
+        "exchange": "override",
+    }
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_dry_run_does_not_write(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="NVDA",
+        name="NVIDIA Corporation",
+        cik="0001045810",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "GPU company",
+                "website": "nvidia.com",
+                "exchange": "NMS",
+            }
+        ),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "NVDA",
+        "--csv",
+        str(override_path),
+        "--dry-run",
+    )
+
+    company.refresh_from_db()
+    assert company.description == ""
+    assert company.website == ""
+    assert company.exchange == ""
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_METADATA).count() == 0
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_force_does_not_wipe_existing_values_with_blanks(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="JPM",
+        name="JPMorgan Chase & Co.",
+        cik="0000019617",
+        description="Existing description",
+        website="https://www.jpmorganchase.com",
+        exchange="NYSE",
+    )
+    original_updated_at = company.updated_at
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker({}),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "JPM",
+        "--csv",
+        str(override_path),
+        "--force",
+    )
+
+    company.refresh_from_db()
+    assert company.description == "Existing description"
+    assert company.website == "https://www.jpmorganchase.com"
+    assert company.exchange == "NYSE"
+    assert company.updated_at == original_updated_at
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.status == IngestionRun.STATUS_FAILED
+    assert run.details_json["updated_fields"] == []
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_force_refreshes_existing_values(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="META",
+        name="Meta Platforms, Inc.",
+        cik="0001326801",
+        description="Old description",
+        website="https://old.example.com",
+        exchange="NASDAQ",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Meta builds social products and ads infrastructure.",
+                "website": "about.meta.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "META",
+        "--csv",
+        str(override_path),
+        "--force",
+    )
+
+    company.refresh_from_db()
+    assert company.description == "Meta builds social products and ads infrastructure."
+    assert company.website == "https://about.meta.com"
+    assert company.exchange == "NASDAQ"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert set(run.details_json["updated_fields"]) == {"description", "website"}
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_handles_full_universe_with_per_ticker_failures(tmp_path, monkeypatch):
+    msft = Company.objects.create(ticker="MSFT", name="Microsoft", cik="0000789019")
+    fail = Company.objects.create(ticker="FAIL", name="Failure Inc.", cik="0000000001")
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    def fake_ticker(ticker):
+        if ticker == "FAIL":
+            return _FakeMetadataTicker(error=RuntimeError("Yahoo unavailable"))
+        return _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Microsoft builds software and cloud services.",
+                "website": "www.microsoft.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        )
+
+    monkeypatch.setattr(enrich_company_metadata_command.yf, "Ticker", fake_ticker)
+
+    call_command("enrich_company_metadata", "--csv", str(override_path))
+
+    msft.refresh_from_db()
+    fail.refresh_from_db()
+
+    assert msft.description == "Microsoft builds software and cloud services."
+    assert fail.description == ""
+    assert IngestionRun.objects.filter(status=IngestionRun.STATUS_SUCCESS, source=IngestionRun.SOURCE_METADATA).count() == 1
+    assert IngestionRun.objects.filter(status=IngestionRun.STATUS_FAILED, source=IngestionRun.SOURCE_METADATA).count() == 1
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_reports_unknown_ticker(tmp_path):
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    stderr = StringIO()
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "MISSING",
+        "--csv",
+        str(override_path),
+        stderr=stderr,
+    )
+
+    assert "No company found with ticker 'MISSING'" in stderr.getvalue()
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_rejects_malformed_override_csv(tmp_path):
+    Company.objects.create(
+        ticker="MSFT",
+        name="Microsoft Corporation",
+        cik="0000789019",
+    )
+    override_path = tmp_path / "bad-overrides.csv"
+    override_path.write_text(
+        "ticker,description,website\n"
+        "MSFT,Missing exchange column,example.com\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError):
+        call_command("enrich_company_metadata", "--ticker", "MSFT", "--csv", str(override_path))
 
 
 def _duration_entry(*, value, start, end, fy, fp, form, filed):
