@@ -54,7 +54,7 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=128, trim_whitespace=False)
 
 
-def _session_payload(user=None):
+def _session_payload(user=None, *, has_refresh_session=False):
     is_authenticated = bool(user and user.is_authenticated)
     return {
         "is_authenticated": is_authenticated,
@@ -69,13 +69,17 @@ def _session_payload(user=None):
             ),
         },
         "google_signin_available": google_oauth_is_configured() or settings.DEBUG,
+        "has_refresh_session": has_refresh_session,
     }
 
 
 def _response_with_auth(request, user, *, http_status=status.HTTP_200_OK):
     get_token(request)
     refresh_token = issue_refresh_token(user)
-    response = Response(_session_payload(user), status=http_status)
+    response = Response(
+        _session_payload(user, has_refresh_session=True),
+        status=http_status,
+    )
     return set_auth_cookies(response, refresh_token)
 
 
@@ -85,13 +89,14 @@ def _response_with_auth(request, user, *, http_status=status.HTTP_200_OK):
 def session_view(request):
     get_token(request)
     user = None
+    has_refresh_session = bool(request.COOKIES.get(settings.SIMPLE_JWT["REFRESH_COOKIE"]))
     try:
         auth_result = CookieJWTAuthentication().authenticate(request)
         if auth_result:
             user = auth_result[0]
     except Exception:
         user = None
-    return Response(_session_payload(user))
+    return Response(_session_payload(user, has_refresh_session=has_refresh_session))
 
 
 @api_view(["POST"])
@@ -152,7 +157,7 @@ def refresh_view(request):
         )
         return clear_auth_cookies(response)
 
-    response = Response(_session_payload(user))
+    response = Response(_session_payload(user, has_refresh_session=True))
     return set_auth_cookies(response, refresh_token)
 
 

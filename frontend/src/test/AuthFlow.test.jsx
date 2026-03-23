@@ -14,6 +14,7 @@ const ANONYMOUS_SESSION = {
     current_daily: 10,
   },
   google_signin_available: true,
+  has_refresh_session: false,
 };
 
 const AUTHENTICATED_SESSION = {
@@ -30,6 +31,7 @@ const AUTHENTICATED_SESSION = {
     current_daily: 50,
   },
   google_signin_available: true,
+  has_refresh_session: true,
 };
 
 function jsonResponse(payload, init = {}) {

@@ -133,7 +133,7 @@ Local development now assumes:
 - the browser entrypoint is `localhost:5173`
 - the frontend calls relative `/api` by default
 - Vite proxies `/api` to Django on `localhost:8000`
-- local auth bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie for state-changing auth requests
+- local auth bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie for state-changing auth requests and tells the frontend whether a refresh cookie is actually present before attempting silent refresh
 
 Google sign-in in local dev:
 - with real Google OAuth credentials configured, the backend-managed redirect/callback flow is used

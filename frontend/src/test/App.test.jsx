@@ -14,6 +14,7 @@ const ANONYMOUS_SESSION = {
     current_daily: 10,
   },
   google_signin_available: true,
+  has_refresh_session: false,
 };
 
 function jsonResponse(payload, init = {}) {
@@ -77,6 +78,30 @@ describe('App routes', () => {
     expect(
       screen.getByText(/normalized sec financial data for 500 s&p companies/i),
     ).toBeInTheDocument();
+  });
+
+  it('does not hit refresh for a fully anonymous bootstrap session', async () => {
+    const fetchSpy = vi.fn((input) => {
+      const url = typeof input === 'string' ? input : input.toString();
+
+      if (url.includes('/auth/session/')) {
+        return Promise.resolve(jsonResponse(ANONYMOUS_SESSION));
+      }
+
+      if (url.includes('/auth/refresh/')) {
+        return Promise.resolve(jsonResponse({ error: 'No refresh session available.' }, { status: 401 }));
+      }
+
+      throw new Error(`Unhandled fetch in App.test: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    renderApp('/');
+
+    await screen.findByRole('heading', { name: /search any s&p 500 company/i });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0].toString()).toContain('/auth/session/');
   });
 
   it('renders the about page on the about route', async () => {

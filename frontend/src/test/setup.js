@@ -11,6 +11,7 @@ const defaultAnonymousSession = {
     current_daily: 10,
   },
   google_signin_available: true,
+  has_refresh_session: false,
 };
 
 function createJsonResponse(payload, { ok = true, status = 200, statusText = 'OK' } = {}) {
