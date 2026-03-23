@@ -156,7 +156,7 @@ test('auth modal supports register, login, and logout', async ({ page }) => {
   await expect(page.getByText(/50 ai prompts\/day/i)).toBeVisible();
 });
 
-test('google sign-in completes through the local mock consent flow', async ({ page }) => {
+test('google sign-in completes through the local mock consent flow', async ({ page, baseURL }) => {
   await page.goto('/');
 
   await page.getByRole('button', { name: /^sign in$/i }).click();
@@ -167,7 +167,11 @@ test('google sign-in completes through the local mock consent flow', async ({ pa
 
   await page.getByRole('button', { name: /continue as/i }).click();
 
-  await expect(page).toHaveURL(/localhost:5173/);
+  const expectedOrigin = new URL(baseURL || 'http://localhost:5173').origin;
+  await expect.poll(() => {
+    const current = new URL(page.url());
+    return `${current.origin}${current.pathname}`;
+  }).toBe(`${expectedOrigin}/`);
   await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
   await expect(page.getByText(/demo user/i)).toBeVisible();
 });
