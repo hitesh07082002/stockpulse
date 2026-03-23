@@ -36,7 +36,7 @@ These are the product and engineering choices that should be treated as fixed un
 
 **Dimensions:**
 - 3.1 DONE `/` is a tool-first landing page centered on search.
-- 3.2 DONE `/stock/:ticker` contains Overview, Financials, Price, Valuation, and AI tabs.
+- 3.2 DONE `/stock/:ticker` contains Overview, Financials, Price, DCF Calculator, and AI tabs.
 - 3.3 DONE `/screener` is in V1, but with a focused filter set and curated table.
 - 3.4 DONE `/about` explains methodology, provenance, and architecture in plain language.
 - 3.5 DONE Every major surface must have loading, empty, stale, and error states.

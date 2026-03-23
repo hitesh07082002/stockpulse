@@ -110,7 +110,7 @@ Includes:
 - Qualtrim-style serious-but-approachable DCF
 - `Earnings` / `Cash Flow` mode toggle
 - fair value per share
-- upside / downside versus current price
+- annualized return versus current price, with total return shown as supporting context
 - editable core assumptions
 - 5-year projection chart
 - summary result cards
@@ -140,7 +140,7 @@ Purpose:
 
 Includes:
 - focused V1 filter set:
-  - sector
+  - sector (using exact GICS sector names)
   - industry
   - market cap
   - PE

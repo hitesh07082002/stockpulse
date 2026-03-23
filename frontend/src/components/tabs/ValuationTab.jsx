@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -31,6 +30,11 @@ function formatPercent(value) {
   if (value == null || Number.isNaN(value)) return '—';
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function formatPercentWithoutSign(value) {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(2)}%`;
 }
 
 function formatCompact(value) {
@@ -82,6 +86,62 @@ function ProjectionTooltip({ active, payload }) {
       <span className="font-data text-xs text-text-secondary">
         Metric {formatCompact(point.projectedMetric)}
       </span>
+    </div>
+  );
+}
+
+function ProjectionChart({ data }) {
+  const containerRef = useRef(null);
+  const [chartWidth, setChartWidth] = useState(640);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(element.clientWidth || 0, 320);
+      setChartWidth(nextWidth);
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'function') {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="h-[340px] w-full">
+      <LineChart data={data} width={chartWidth} height={340} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tickFormatter={(value) => `$${value.toFixed(0)}`}
+          tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+          axisLine={false}
+          tickLine={false}
+          width={72}
+        />
+        <Tooltip content={<ProjectionTooltip />} />
+        <Line
+          type="monotone"
+          dataKey="projectedPrice"
+          stroke="var(--color-accent)"
+          strokeWidth={2.5}
+          dot={{ r: 4, fill: 'var(--color-accent)' }}
+          activeDot={{ r: 6 }}
+        />
+      </LineChart>
     </div>
   );
 }
@@ -179,7 +239,11 @@ function ValuationTab({ ticker }) {
   );
 
   const futurePrice = projectionData.at(-1)?.projectedPrice ?? null;
-  const upsideDownside = useMemo(() => {
+  const annualizedReturn = useMemo(() => {
+    if (futurePrice == null || currentPrice == null || currentPrice <= 0) return null;
+    return (((futurePrice / currentPrice) ** (1 / projectionYears)) - 1) * 100;
+  }, [futurePrice, currentPrice, projectionYears]);
+  const totalReturn = useMemo(() => {
     if (futurePrice == null || currentPrice == null || currentPrice <= 0) return null;
     return ((futurePrice - currentPrice) / currentPrice) * 100;
   }, [futurePrice, currentPrice]);
@@ -206,7 +270,7 @@ function ValuationTab({ ticker }) {
     return (
       <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <section className="rounded-2xl border border-border bg-surface p-6">
-          <h3 className="font-display text-2xl font-semibold text-text-primary">Valuation</h3>
+          <h3 className="font-display text-2xl font-semibold text-text-primary">DCF Calculator</h3>
           <WarningList warnings={data?.warnings} />
         </section>
         <StatePanel message={data?.not_applicable_reason || 'Not applicable for financial sector companies'} />
@@ -333,48 +397,23 @@ function ValuationTab({ ticker }) {
             </div>
             <div>
               <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Upside / Downside vs Today
+                Implied CAGR vs Today
               </div>
-              <div className="font-data text-2xl text-text-primary">{formatPercent(upsideDownside)}</div>
+              <div className="font-data text-2xl text-text-primary">{formatPercent(annualizedReturn)}</div>
+              <div className="pt-1 font-body text-xs text-text-tertiary">
+                {`Total ${projectionYears}-year return: ${formatPercent(totalReturn)}`}
+              </div>
             </div>
             <div>
               <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Entry Price For {desiredReturnValue ?? '—'}% Return
+                Entry Price For {desiredReturnValue == null ? '—' : formatPercentWithoutSign(desiredReturnValue)} CAGR
               </div>
               <div className="font-data text-2xl text-text-primary">{formatCurrency(entryPrice)}</div>
             </div>
           </div>
 
           {projectionData.length > 0 ? (
-            <div className="h-[340px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={projectionData} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `$${value.toFixed(0)}`}
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={72}
-                  />
-                  <Tooltip content={<ProjectionTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="projectedPrice"
-                    stroke="var(--color-accent)"
-                    strokeWidth={2.5}
-                    dot={{ r: 4, fill: 'var(--color-accent)' }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <ProjectionChart data={projectionData} />
           ) : (
             <StatePanel message={projectionMessage} />
           )}

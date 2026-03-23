@@ -31,27 +31,38 @@ function buildURL(path, params) {
   return url.toString();
 }
 
+async function buildApiError(response) {
+  let errorPayload = null;
+  let messageText = `API error: ${response.status} ${response.statusText}`;
+
+  try {
+    errorPayload = await response.json();
+    if (errorPayload?.message) {
+      messageText = errorPayload.message;
+    } else if (errorPayload?.error) {
+      messageText = errorPayload.error;
+    } else if (errorPayload?.detail) {
+      messageText = errorPayload.detail;
+    }
+  } catch {
+    // Fall back to the generic HTTP error above.
+  }
+
+  const error = new Error(messageText);
+  error.status = response.status;
+  error.statusText = response.statusText;
+  error.payload = errorPayload;
+
+  return error;
+}
+
 async function get(path, params) {
   const response = await fetch(buildURL(path, params), {
     credentials: 'include',
   });
 
   if (!response.ok) {
-    let messageText = `API error: ${response.status} ${response.statusText}`;
-    try {
-      const errorPayload = await response.json();
-      if (errorPayload?.message) {
-        messageText = errorPayload.message;
-      } else if (errorPayload?.error) {
-        messageText = errorPayload.error;
-      } else if (errorPayload?.detail) {
-        messageText = errorPayload.detail;
-      }
-    } catch {
-      // Fall back to the generic HTTP error above.
-    }
-
-    throw new Error(messageText);
+    throw await buildApiError(response);
   }
 
   return response.json();
@@ -92,18 +103,7 @@ export async function* sendChatMessage(ticker, message) {
   });
 
   if (!response.ok) {
-    let messageText = `API error: ${response.status} ${response.statusText}`;
-    try {
-      const errorPayload = await response.json();
-      if (errorPayload?.message) {
-        messageText = errorPayload.message;
-      } else if (errorPayload?.error) {
-        messageText = errorPayload.error;
-      }
-    } catch {
-      // Fall back to the generic HTTP error above.
-    }
-    throw new Error(messageText);
+    throw await buildApiError(response);
   }
 
   const reader = response.body.getReader();

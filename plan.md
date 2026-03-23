@@ -441,7 +441,7 @@ POST /api/auth/logout/
 
 GET  /api/companies/
      ?search=apple
-     ?sector=Technology
+     ?sector=Information%20Technology
      ?page=1
 
 GET  /api/companies/{ticker}/
@@ -457,7 +457,7 @@ GET  /api/companies/{ticker}/prices/
 GET  /api/companies/{ticker}/valuation-inputs/
 
 GET  /api/screener/
-     ?sector=Technology
+     ?sector=Information%20Technology
      ?pe_min=5
      ?pe_max=30
      ?market_cap_min=10000000000
