@@ -1,0 +1,1170 @@
+import csv
+from datetime import date
+from decimal import Decimal
+from io import StringIO
+from pathlib import Path
+
+import pytest
+from django.core.management.base import CommandError
+from django.core.management import call_command
+
+from stocks.management.commands import enrich_company_metadata as enrich_company_metadata_command
+from stocks.management.commands import ingest_financials as ingest_financials_command
+from stocks.management.commands import update_prices as update_prices_command
+from stocks.models import Company, FinancialFact, IngestionRun, MetricSnapshot, PriceCache, RawSecPayload
+
+
+SEED_25_CSV = (
+    Path(__file__).resolve().parent / "data" / "sp500_seed_25.csv"
+)
+
+
+class _FakeMetadataTicker:
+    def __init__(self, payload=None, error=None):
+        self._payload = payload or {}
+        self._error = error
+
+    @property
+    def info(self):
+        if self._error:
+            raise self._error
+        return self._payload
+
+
+def test_seed_fixture_contains_25_rows():
+    with open(SEED_25_CSV, newline="", encoding="utf-8") as fixture_file:
+        rows = list(csv.DictReader(fixture_file))
+
+    assert len(rows) == 25
+    assert {row["sector"] for row in rows} >= {
+        "Technology",
+        "Healthcare",
+        "Financial Services",
+        "Communication Services",
+        "Consumer Cyclical",
+        "Consumer Defensive",
+        "Energy",
+        "Industrials",
+        "Basic Materials",
+    }
+
+
+@pytest.mark.django_db
+def test_ingest_companies_supports_csv_override(tmp_path):
+    csv_path = tmp_path / "companies.csv"
+    csv_path.write_text(
+        "ticker,name,sector,industry,cik\n"
+        "TEST,Test Corp,Technology,Software,123456\n",
+        encoding="utf-8",
+    )
+
+    call_command("ingest_companies", "--csv", str(csv_path))
+
+    company = Company.objects.get(ticker="TEST")
+    assert company.name == "Test Corp"
+    assert company.sector == "Technology"
+    assert company.industry == "Software"
+    assert company.cik == "123456"
+
+
+@pytest.mark.django_db
+def test_ingest_companies_dedupes_multi_class_rows_by_cik(tmp_path):
+    csv_path = tmp_path / "companies.csv"
+    csv_path.write_text(
+        "ticker,name,sector,industry,cik\n"
+        "GOOG,Alphabet Inc.,Communication Services,Interactive Media & Services,1652044\n"
+        "GOOGL,Alphabet Inc.,Communication Services,Interactive Media & Services,1652044\n"
+        "TEST,Test Corp,Technology,Software,123456\n",
+        encoding="utf-8",
+    )
+
+    call_command("ingest_companies", "--csv", str(csv_path))
+
+    assert Company.objects.count() == 2
+    assert Company.objects.filter(ticker="GOOGL", cik="1652044").exists()
+    assert not Company.objects.filter(ticker="GOOG").exists()
+
+
+@pytest.mark.django_db
+def test_ingest_companies_updates_existing_company_when_cik_matches_new_ticker(tmp_path):
+    Company.objects.create(
+        ticker="FOX",
+        name="Fox Corporation",
+        sector="Communication Services",
+        industry="Broadcasting",
+        cik="1754301",
+    )
+
+    csv_path = tmp_path / "companies.csv"
+    csv_path.write_text(
+        "ticker,name,sector,industry,cik\n"
+        "FOXA,Fox Corporation,Communication Services,Broadcasting,1754301\n",
+        encoding="utf-8",
+    )
+
+    call_command("ingest_companies", "--csv", str(csv_path))
+
+    assert Company.objects.count() == 1
+    assert Company.objects.filter(ticker="FOXA", cik="1754301").exists()
+    assert not Company.objects.filter(ticker="FOX").exists()
+
+
+@pytest.mark.django_db
+def test_seed_smoke_data_creates_deterministic_aapl_dataset():
+    call_command("seed_smoke_data")
+
+    company = Company.objects.get(ticker="AAPL")
+    assert company.name == "Apple Inc."
+    assert company.sector == "Information Technology"
+    assert company.current_price == Decimal("195.25")
+
+    snapshot = MetricSnapshot.objects.get(company=company)
+    assert snapshot.pe_ratio == Decimal("28.90")
+    assert snapshot.revenue_growth_yoy == Decimal("0.0200")
+
+    assert FinancialFact.objects.filter(company=company, period_type="annual").count() >= 17
+    assert FinancialFact.objects.filter(
+        company=company,
+        metric_key="diluted_eps",
+        period_type="annual",
+        fiscal_year=2024,
+    ).exists()
+
+    one_year_cache = PriceCache.objects.get(company=company, range_key="1Y")
+    five_year_cache = PriceCache.objects.get(company=company, range_key="5Y")
+    assert one_year_cache.sampling_granularity == "trading-day"
+    assert five_year_cache.sampling_granularity == "weekly"
+    assert len(one_year_cache.data_json) >= 5
+    assert len(five_year_cache.data_json) >= 5
+
+
+@pytest.mark.django_db
+def test_seed_smoke_data_is_idempotent_for_company_snapshot_and_price_cache():
+    call_command("seed_smoke_data")
+    call_command("seed_smoke_data")
+
+    company = Company.objects.get(ticker="AAPL")
+    assert Company.objects.filter(ticker="AAPL").count() == 1
+    assert MetricSnapshot.objects.filter(company=company).count() == 1
+    assert PriceCache.objects.filter(company=company, range_key="1Y").count() == 1
+    assert PriceCache.objects.filter(company=company, range_key="5Y").count() == 1
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_updates_single_ticker_from_yahoo(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="MSFT",
+        name="Microsoft Corporation",
+        cik="0000789019",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Microsoft builds software and cloud services.",
+                "website": "www.microsoft.com/",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    stdout = StringIO()
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "MSFT",
+        "--csv",
+        str(override_path),
+        stdout=stdout,
+    )
+
+    company.refresh_from_db()
+
+    assert company.description == "Microsoft builds software and cloud services."
+    assert company.website == "https://www.microsoft.com"
+    assert company.exchange == "NASDAQ"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.status == IngestionRun.STATUS_SUCCESS
+    assert set(run.details_json["updated_fields"]) == {"description", "website", "exchange"}
+    assert run.details_json["sources"] == {
+        "description": "yahoo",
+        "website": "yahoo",
+        "exchange": "yahoo",
+    }
+    assert "Coverage — descriptions: 1/1, websites: 1/1, exchanges: 1/1" in stdout.getvalue()
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_respects_override_precedence(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="AAPL",
+        name="Apple Inc.",
+        cik="0000320193",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n"
+        "AAPL,Curated description,investor.apple.com,NYSE\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Yahoo description",
+                "website": "apple.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    call_command("enrich_company_metadata", "--ticker", "AAPL", "--csv", str(override_path))
+
+    company.refresh_from_db()
+
+    assert company.description == "Curated description"
+    assert company.website == "https://investor.apple.com"
+    assert company.exchange == "NYSE"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.details_json["sources"] == {
+        "description": "override",
+        "website": "override",
+        "exchange": "override",
+    }
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_dry_run_does_not_write(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="NVDA",
+        name="NVIDIA Corporation",
+        cik="0001045810",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "GPU company",
+                "website": "nvidia.com",
+                "exchange": "NMS",
+            }
+        ),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "NVDA",
+        "--csv",
+        str(override_path),
+        "--dry-run",
+    )
+
+    company.refresh_from_db()
+    assert company.description == ""
+    assert company.website == ""
+    assert company.exchange == ""
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_METADATA).count() == 0
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_force_does_not_wipe_existing_values_with_blanks(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="JPM",
+        name="JPMorgan Chase & Co.",
+        cik="0000019617",
+        description="Existing description",
+        website="https://www.jpmorganchase.com",
+        exchange="NYSE",
+    )
+    original_updated_at = company.updated_at
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker({}),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "JPM",
+        "--csv",
+        str(override_path),
+        "--force",
+    )
+
+    company.refresh_from_db()
+    assert company.description == "Existing description"
+    assert company.website == "https://www.jpmorganchase.com"
+    assert company.exchange == "NYSE"
+    assert company.updated_at == original_updated_at
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert run.status == IngestionRun.STATUS_FAILED
+    assert run.details_json["updated_fields"] == []
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_force_refreshes_existing_values(tmp_path, monkeypatch):
+    company = Company.objects.create(
+        ticker="META",
+        name="Meta Platforms, Inc.",
+        cik="0001326801",
+        description="Old description",
+        website="https://old.example.com",
+        exchange="NASDAQ",
+    )
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        enrich_company_metadata_command.yf,
+        "Ticker",
+        lambda ticker: _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Meta builds social products and ads infrastructure.",
+                "website": "about.meta.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        ),
+    )
+
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "META",
+        "--csv",
+        str(override_path),
+        "--force",
+    )
+
+    company.refresh_from_db()
+    assert company.description == "Meta builds social products and ads infrastructure."
+    assert company.website == "https://about.meta.com"
+    assert company.exchange == "NASDAQ"
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_METADATA)
+    assert set(run.details_json["updated_fields"]) == {"description", "website"}
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_handles_full_universe_with_per_ticker_failures(tmp_path, monkeypatch):
+    msft = Company.objects.create(ticker="MSFT", name="Microsoft", cik="0000789019")
+    fail = Company.objects.create(ticker="FAIL", name="Failure Inc.", cik="0000000001")
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    def fake_ticker(ticker):
+        if ticker == "FAIL":
+            return _FakeMetadataTicker(error=RuntimeError("Yahoo unavailable"))
+        return _FakeMetadataTicker(
+            {
+                "longBusinessSummary": "Microsoft builds software and cloud services.",
+                "website": "www.microsoft.com",
+                "fullExchangeName": "NasdaqGS",
+            }
+        )
+
+    monkeypatch.setattr(enrich_company_metadata_command.yf, "Ticker", fake_ticker)
+
+    call_command("enrich_company_metadata", "--csv", str(override_path))
+
+    msft.refresh_from_db()
+    fail.refresh_from_db()
+
+    assert msft.description == "Microsoft builds software and cloud services."
+    assert fail.description == ""
+    assert IngestionRun.objects.filter(status=IngestionRun.STATUS_SUCCESS, source=IngestionRun.SOURCE_METADATA).count() == 1
+    assert IngestionRun.objects.filter(status=IngestionRun.STATUS_FAILED, source=IngestionRun.SOURCE_METADATA).count() == 1
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_reports_unknown_ticker(tmp_path):
+    override_path = tmp_path / "overrides.csv"
+    override_path.write_text(
+        "ticker,description,website,exchange\n",
+        encoding="utf-8",
+    )
+
+    stderr = StringIO()
+    call_command(
+        "enrich_company_metadata",
+        "--ticker",
+        "MISSING",
+        "--csv",
+        str(override_path),
+        stderr=stderr,
+    )
+
+    assert "No company found with ticker 'MISSING'" in stderr.getvalue()
+
+
+@pytest.mark.django_db
+def test_enrich_company_metadata_rejects_malformed_override_csv(tmp_path):
+    Company.objects.create(
+        ticker="MSFT",
+        name="Microsoft Corporation",
+        cik="0000789019",
+    )
+    override_path = tmp_path / "bad-overrides.csv"
+    override_path.write_text(
+        "ticker,description,website\n"
+        "MSFT,Missing exchange column,example.com\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError):
+        call_command("enrich_company_metadata", "--ticker", "MSFT", "--csv", str(override_path))
+
+
+def _duration_entry(*, value, start, end, fy, fp, form, filed):
+    return {
+        "val": value,
+        "start": start,
+        "end": end,
+        "fy": fy,
+        "fp": fp,
+        "form": form,
+        "filed": filed,
+    }
+
+
+def _instant_entry(*, value, end, fy, fp, form, filed):
+    return {
+        "val": value,
+        "end": end,
+        "fy": fy,
+        "fp": fp,
+        "form": form,
+        "filed": filed,
+    }
+
+
+def _sample_companyfacts_payload():
+    return {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=1000,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                            _duration_entry(
+                                value=1100,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K/A",
+                                filed="2025-02-15",
+                            ),
+                            _duration_entry(
+                                value=250,
+                                start="2024-01-01",
+                                end="2024-03-31",
+                                fy=2024,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2024-05-01",
+                            ),
+                            _duration_entry(
+                                value=600,
+                                start="2024-01-01",
+                                end="2024-06-30",
+                                fy=2024,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2024-08-01",
+                            ),
+                            _duration_entry(
+                                value=900,
+                                start="2024-01-01",
+                                end="2024-09-30",
+                                fy=2024,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2024-11-01",
+                            ),
+                        ]
+                    }
+                },
+                "NetCashProvidedByUsedInOperatingActivities": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=400,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                            _duration_entry(
+                                value=90,
+                                start="2024-01-01",
+                                end="2024-03-31",
+                                fy=2024,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2024-05-01",
+                            ),
+                            _duration_entry(
+                                value=220,
+                                start="2024-01-01",
+                                end="2024-06-30",
+                                fy=2024,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2024-08-01",
+                            ),
+                            _duration_entry(
+                                value=330,
+                                start="2024-01-01",
+                                end="2024-09-30",
+                                fy=2024,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2024-11-01",
+                            ),
+                        ]
+                    }
+                },
+                "PaymentsToAcquirePropertyPlantAndEquipment": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=120,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                            _duration_entry(
+                                value=20,
+                                start="2024-01-01",
+                                end="2024-03-31",
+                                fy=2024,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2024-05-01",
+                            ),
+                            _duration_entry(
+                                value=60,
+                                start="2024-01-01",
+                                end="2024-06-30",
+                                fy=2024,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2024-08-01",
+                            ),
+                            _duration_entry(
+                                value=90,
+                                start="2024-01-01",
+                                end="2024-09-30",
+                                fy=2024,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2024-11-01",
+                            ),
+                        ]
+                    }
+                },
+            },
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            _instant_entry(
+                                value=1000,
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                            _instant_entry(
+                                value=950,
+                                end="2024-09-30",
+                                fy=2024,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2024-11-01",
+                            ),
+                        ]
+                    }
+                }
+            },
+        }
+    }
+
+
+class _FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _FakeSecSession:
+    def __init__(self, companyfacts_payload, submissions_payload):
+        self.headers = {}
+        self._companyfacts_payload = companyfacts_payload
+        self._submissions_payload = submissions_payload
+
+    def get(self, url, timeout):
+        if "companyfacts" in url:
+            return _FakeResponse(self._companyfacts_payload)
+        if "submissions" in url:
+            return _FakeResponse(self._submissions_payload)
+        raise AssertionError(f"Unexpected SEC URL: {url}")
+
+
+class _ExplodingSession:
+    headers = {}
+
+    def get(self, url, timeout):
+        raise AssertionError(f"Network should not be called in cached rebuild mode: {url}")
+
+
+@pytest.mark.django_db
+def test_ingest_financials_builds_canonical_facts_and_audit_records(monkeypatch):
+    payload = _sample_companyfacts_payload()
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST")
+
+    company.refresh_from_db()
+
+    revenue_annual = FinancialFact.objects.get(
+        company=company,
+        metric_key="revenue",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    revenue_q2 = FinancialFact.objects.get(
+        company=company,
+        metric_key="revenue",
+        period_type="quarterly",
+        fiscal_year=2024,
+        fiscal_quarter=2,
+    )
+    revenue_q4 = FinancialFact.objects.get(
+        company=company,
+        metric_key="revenue",
+        period_type="quarterly",
+        fiscal_year=2024,
+        fiscal_quarter=4,
+    )
+    free_cash_flow_annual = FinancialFact.objects.get(
+        company=company,
+        metric_key="free_cash_flow",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    shares_annual = FinancialFact.objects.get(
+        company=company,
+        metric_key="shares_outstanding",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+
+    assert revenue_annual.value == Decimal("1100")
+    assert revenue_annual.source_form == "10-K/A"
+    assert revenue_annual.is_amended is True
+    assert revenue_q2.value == Decimal("350")
+    assert revenue_q2.is_derived is True
+    assert revenue_q2.selection_reason == "derived_from_ytd"
+    assert revenue_q4.value == Decimal("200")
+    assert revenue_q4.selection_reason == "derived_q4_from_annual"
+    assert free_cash_flow_annual.value == Decimal("280")
+    assert shares_annual.value == Decimal("1000")
+    assert shares_annual.source_tag == "EntityCommonStockSharesOutstanding"
+    assert company.facts_updated_at is not None
+
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_SEC)
+    raw_companyfacts = RawSecPayload.objects.get(
+        company=company,
+        source=RawSecPayload.SOURCE_COMPANYFACTS,
+    )
+    raw_submissions = RawSecPayload.objects.get(
+        company=company,
+        source=RawSecPayload.SOURCE_SUBMISSIONS,
+    )
+
+    assert run.status == IngestionRun.STATUS_SUCCESS
+    assert run.details_json["raw_payload_ids"] == {
+        "companyfacts": raw_companyfacts.id,
+        "submissions": raw_submissions.id,
+    }
+    assert run.details_json["facts_replaced"] == FinancialFact.objects.filter(company=company).count()
+    assert raw_companyfacts.status == RawSecPayload.STATUS_SUCCESS
+    assert raw_companyfacts.payload_json == payload
+    assert raw_submissions.status == RawSecPayload.STATUS_SUCCESS
+    assert raw_submissions.payload_json == submissions_payload
+
+
+@pytest.mark.django_db
+def test_ingest_financials_prefers_latest_framed_periods_within_same_fiscal_year(monkeypatch):
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=60922000000,
+                                start="2023-01-30",
+                                end="2024-01-28",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=130497000000,
+                                start="2024-01-29",
+                                end="2025-01-26",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=215938000000,
+                                start="2025-01-27",
+                                end="2026-01-25",
+                                fy=2026,
+                                fp="FY",
+                                form="10-K",
+                                filed="2026-02-25",
+                            ),
+                            _duration_entry(
+                                value=26044000000,
+                                start="2024-01-29",
+                                end="2024-04-28",
+                                fy=2026,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2025-05-28",
+                            ),
+                            _duration_entry(
+                                value=44062000000,
+                                start="2025-01-27",
+                                end="2025-04-27",
+                                fy=2026,
+                                fp="Q1",
+                                form="10-Q",
+                                filed="2025-05-28",
+                            ),
+                            _duration_entry(
+                                value=56084000000,
+                                start="2024-01-29",
+                                end="2024-07-28",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=30040000000,
+                                start="2024-04-29",
+                                end="2024-07-28",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=90805000000,
+                                start="2025-01-27",
+                                end="2025-07-27",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=46743000000,
+                                start="2025-04-28",
+                                end="2025-07-27",
+                                fy=2026,
+                                fp="Q2",
+                                form="10-Q",
+                                filed="2025-08-27",
+                            ),
+                            _duration_entry(
+                                value=147811000000,
+                                start="2025-01-27",
+                                end="2025-10-26",
+                                fy=2026,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2025-11-19",
+                            ),
+                            _duration_entry(
+                                value=57006000000,
+                                start="2025-07-28",
+                                end="2025-10-26",
+                                fy=2026,
+                                fp="Q3",
+                                form="10-Q",
+                                filed="2025-11-19",
+                            ),
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="NVDA", name="Nvidia", cik="1045810")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "NVDA", "--force")
+
+    annual = FinancialFact.objects.get(
+        company=company,
+        metric_key="revenue",
+        period_type="annual",
+        fiscal_year=2026,
+    )
+    quarters = list(
+        FinancialFact.objects.filter(
+            company=company,
+            metric_key="revenue",
+            period_type="quarterly",
+            fiscal_year=2026,
+        )
+        .order_by("fiscal_quarter")
+        .values_list("fiscal_quarter", "value", "selection_reason")
+    )
+
+    assert annual.value == Decimal("215938000000")
+    assert quarters == [
+        (1, Decimal("44062000000"), "selected_quarterly_fact"),
+        (2, Decimal("46743000000"), "selected_quarterly_fact"),
+        (3, Decimal("57006000000"), "selected_quarterly_fact"),
+        (4, Decimal("68127000000"), "derived_q4_from_annual"),
+    ]
+
+
+@pytest.mark.django_db
+def test_ingest_financials_derives_gross_profit_total_debt_and_dividends(monkeypatch):
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=1000,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "CostOfRevenue": {
+                    "units": {
+                        "USD": [
+                            _duration_entry(
+                                value=400,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "LongTermDebtNoncurrent": {
+                    "units": {
+                        "USD": [
+                            _instant_entry(
+                                value=200,
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "LongTermDebtCurrent": {
+                    "units": {
+                        "USD": [
+                            _instant_entry(
+                                value=50,
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+                "CommonStockDividendsPerShareDeclared": {
+                    "units": {
+                        "USD/shares": [
+                            _duration_entry(
+                                value=2.0,
+                                start="2024-01-01",
+                                end="2024-12-31",
+                                fy=2024,
+                                fp="FY",
+                                form="10-K",
+                                filed="2025-02-01",
+                            ),
+                        ]
+                    }
+                },
+            }
+        }
+    }
+    submissions_payload = {"filings": {"recent": {"form": ["10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST", "--force")
+
+    gross_profit = FinancialFact.objects.get(
+        company=company,
+        metric_key="gross_profit",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    total_debt = FinancialFact.objects.get(
+        company=company,
+        metric_key="total_debt",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+    dividends = FinancialFact.objects.get(
+        company=company,
+        metric_key="dividends_per_share",
+        period_type="annual",
+        fiscal_year=2024,
+    )
+
+    assert gross_profit.value == Decimal("600")
+    assert gross_profit.is_derived is True
+    assert gross_profit.selection_reason == "derived_from_revenue_minus_cost_of_revenue"
+    assert total_debt.value == Decimal("250")
+    assert total_debt.is_derived is True
+    assert total_debt.selection_reason == "derived_from_current_and_noncurrent_debt"
+    assert dividends.value == Decimal("2.0")
+
+
+@pytest.mark.django_db
+def test_ingest_financials_can_rebuild_from_cached_payloads(monkeypatch):
+    payload = _sample_companyfacts_payload()
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+    RawSecPayload.objects.create(
+        company=company,
+        source=RawSecPayload.SOURCE_COMPANYFACTS,
+        status=RawSecPayload.STATUS_SUCCESS,
+        payload_json=payload,
+        retention_note="latest_success",
+    )
+    RawSecPayload.objects.create(
+        company=company,
+        source=RawSecPayload.SOURCE_SUBMISSIONS,
+        status=RawSecPayload.STATUS_SUCCESS,
+        payload_json=submissions_payload,
+        retention_note="latest_success",
+    )
+
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _ExplodingSession(),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST", "--from-cache")
+
+    assert FinancialFact.objects.filter(company=company, metric_key="revenue").exists()
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_SEC).exists()
+
+
+@pytest.mark.django_db
+def test_ingest_financials_respects_cooldown_and_force_is_idempotent(monkeypatch):
+    payload = _sample_companyfacts_payload()
+    submissions_payload = {"filings": {"recent": {"form": ["10-Q", "10-K"]}}}
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+
+    monkeypatch.setattr(ingest_financials_command, "REQUEST_INTERVAL", 0)
+    monkeypatch.setattr(
+        ingest_financials_command.requests,
+        "Session",
+        lambda: _FakeSecSession(payload, submissions_payload),
+    )
+
+    call_command("ingest_financials", "--ticker", "TEST")
+    initial_fact_count = FinancialFact.objects.filter(company=company).count()
+
+    call_command("ingest_financials", "--ticker", "TEST")
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_SEC).count() == 1
+    assert RawSecPayload.objects.filter(company=company, source=RawSecPayload.SOURCE_COMPANYFACTS).count() == 1
+    assert RawSecPayload.objects.filter(company=company, source=RawSecPayload.SOURCE_SUBMISSIONS).count() == 1
+
+    call_command("ingest_financials", "--ticker", "TEST", "--force")
+
+    assert IngestionRun.objects.filter(company=company, source=IngestionRun.SOURCE_SEC).count() == 2
+    assert RawSecPayload.objects.filter(company=company, source=RawSecPayload.SOURCE_COMPANYFACTS).count() == 1
+    assert RawSecPayload.objects.filter(company=company, source=RawSecPayload.SOURCE_SUBMISSIONS).count() == 1
+    assert FinancialFact.objects.filter(company=company).count() == initial_fact_count
+    assert FinancialFact.objects.filter(
+        company=company,
+        metric_key="revenue",
+        period_type="annual",
+        fiscal_year=2024,
+    ).count() == 1
+
+
+@pytest.mark.django_db
+def test_update_prices_uses_ingestion_run_and_quote_timestamp(monkeypatch):
+    company = Company.objects.create(ticker="TEST", name="Test Corp", cik="1234567890")
+
+    class FakeTicker:
+        info = {
+            "regularMarketPrice": 123.45,
+            "marketCap": 987654321,
+            "fiftyTwoWeekHigh": 140.10,
+            "fiftyTwoWeekLow": 99.50,
+            "sharesOutstanding": 7654321,
+        }
+
+    monkeypatch.setattr(update_prices_command.yf, "Ticker", lambda ticker: FakeTicker())
+
+    call_command("update_prices", "--ticker", "TEST")
+
+    company.refresh_from_db()
+    run = IngestionRun.objects.get(company=company, source=IngestionRun.SOURCE_PRICES)
+
+    assert company.current_price == Decimal("123.45")
+    assert company.market_cap == 987654321
+    assert company.week_52_high == Decimal("140.10")
+    assert company.week_52_low == Decimal("99.50")
+    assert company.shares_outstanding == 7654321
+    assert company.quote_updated_at is not None
+    assert run.status == IngestionRun.STATUS_SUCCESS
+    assert run.details_json == {"records_updated": 1}
+
+
+@pytest.mark.django_db
+def test_ingest_financials_dedupes_period_end_collisions_deterministically():
+    company = Company.objects.create(ticker="DUP", name="Duplicate Corp", cik="9999999999")
+    command = ingest_financials_command.Command()
+
+    quarter_fact = FinancialFact(
+        company=company,
+        metric_key="net_income",
+        period_type=FinancialFact.PERIOD_QUARTERLY,
+        fiscal_year=2024,
+        fiscal_quarter=2,
+        period_start=None,
+        period_end=date(2024, 6, 30),
+        value=Decimal("10"),
+        unit="USD",
+        source_tag="NetIncomeLoss",
+        source_form="10-Q",
+        filed_date=date(2024, 8, 1),
+        selection_reason="selected_quarterly_fact",
+    )
+    annual_collision = FinancialFact(
+        company=company,
+        metric_key="net_income",
+        period_type=FinancialFact.PERIOD_QUARTERLY,
+        fiscal_year=2024,
+        fiscal_quarter=4,
+        period_start=None,
+        period_end=date(2024, 6, 30),
+        value=Decimal("11"),
+        unit="USD",
+        source_tag="NetIncomeLoss",
+        source_form="10-K",
+        filed_date=date(2025, 2, 1),
+        selection_reason="selected_quarterly_fact",
+    )
+
+    deduped, collisions = command._dedupe_fact_models([annual_collision, quarter_fact])
+
+    assert collisions == 1
+    assert len(deduped) == 1
+    assert deduped[0].fiscal_quarter == 2
+    assert deduped[0].source_form == "10-Q"

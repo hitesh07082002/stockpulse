@@ -1,19 +1,52 @@
-import { useState } from 'react';
+import React, { Suspense, lazy, startTransition, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCompany } from '../hooks/useStockData';
 import OverviewTab from '../components/tabs/OverviewTab';
-import FinancialsTab from '../components/tabs/FinancialsTab';
-import PriceTab from '../components/tabs/PriceTab';
-import ValuationTab from '../components/tabs/ValuationTab';
-import AITab from '../components/tabs/AITab';
+
+const FinancialsTab = lazy(() => import('../components/tabs/FinancialsTab'));
+const PriceTab = lazy(() => import('../components/tabs/PriceTab'));
+const ValuationTab = lazy(() => import('../components/tabs/ValuationTab'));
+const AITab = lazy(() => import('../components/tabs/AITab'));
 
 const TABS = [
   { key: 'overview', label: 'Overview', Component: OverviewTab },
   { key: 'financials', label: 'Financials', Component: FinancialsTab },
   { key: 'price', label: 'Price', Component: PriceTab },
-  { key: 'valuation', label: 'Valuation', Component: ValuationTab },
+  { key: 'valuation', label: 'DCF Calculator', Component: ValuationTab },
   { key: 'ai', label: 'AI', Component: AITab },
 ];
+
+function TabPanelFallback({ tabKey }) {
+  const showCardGrid = tabKey === 'financials' || tabKey === 'valuation';
+  const showChart = tabKey === 'financials' || tabKey === 'price' || tabKey === 'valuation';
+
+  return (
+    <div className="flex flex-col gap-4">
+      {showCardGrid && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div key={idx} className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2">
+              <div className="skeleton h-3 w-24 rounded" />
+              <div className="skeleton h-7 w-32 rounded" />
+              <div className="skeleton h-3 w-16 rounded" />
+            </div>
+          ))}
+        </div>
+      )}
+      {showChart && (
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <div className="skeleton h-[360px] w-full rounded-lg" />
+        </div>
+      )}
+      {!showCardGrid && !showChart && (
+        <div className="bg-surface border border-border rounded-lg p-6">
+          <div className="skeleton h-6 w-40 rounded" />
+          <div className="mt-4 skeleton h-40 w-full rounded-lg" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatMarketCap(value) {
   if (value == null) return null;
@@ -38,13 +71,29 @@ function formatChange(value) {
   return `${sign}${num.toFixed(2)}%`;
 }
 
+function formatQuoteTimestamp(value) {
+  if (!value) return null;
+
+  const updatedAt = new Date(value);
+  if (Number.isNaN(updatedAt.getTime())) return null;
+
+  return updatedAt.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function StockDetailPage() {
   const { ticker } = useParams();
   const { data: company, isLoading, isError, error } = useCompany(ticker);
   const [activeTab, setActiveTab] = useState('overview');
+  const normalizedTicker = ticker?.toUpperCase();
+  const isNotFound = (!isLoading && !isError && !company) || (isError && error?.status === 404);
 
-  // 404: company not found (API returned but no data)
-  if (!isLoading && !isError && !company) {
+  // Treat an empty result or backend 404 as the same search-facing not-found state.
+  if (isNotFound) {
     return (
       <div className="flex flex-col min-h-[calc(100vh-56px-80px)]">
         <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
@@ -52,13 +101,13 @@ function StockDetailPage() {
             404
           </span>
           <p className="font-body text-lg text-text-secondary">
-            Company not found for ticker <strong>{ticker?.toUpperCase()}</strong>
+            Company not found for ticker <strong>{normalizedTicker}</strong>
           </p>
           <Link
-            to="/screener"
+            to="/"
             className="font-body text-sm text-accent hover:text-accent-hover transition-colors"
           >
-            Search for another company
+            Back to search
           </Link>
         </div>
       </div>
@@ -74,10 +123,10 @@ function StockDetailPage() {
             {error?.message || 'Something went wrong. Please try again.'}
           </p>
           <Link
-            to="/screener"
+            to="/"
             className="font-body text-sm text-accent hover:text-accent-hover transition-colors"
           >
-            Back to screener
+            Back to search
           </Link>
         </div>
       </div>
@@ -86,6 +135,7 @@ function StockDetailPage() {
 
   const changeValue = company?.change_percent ?? company?.changePercent;
   const isPositive = changeValue != null && Number(changeValue) >= 0;
+  const quoteFreshnessLabel = formatQuoteTimestamp(company?.quote_updated_at);
 
   const ActiveComponent = TABS.find((t) => t.key === activeTab)?.Component;
 
@@ -150,38 +200,50 @@ function StockDetailPage() {
                   {formatMarketCap(company.market_cap)}
                 </span>
               )}
+              {quoteFreshnessLabel && (
+                <span className="font-body text-xs px-2 py-0.5 rounded-full bg-elevated text-text-tertiary">
+                  {`Quote updated ${quoteFreshnessLabel}`}
+                </span>
+              )}
             </div>
           </>
         )}
 
         {/* ---- Tab Bar ---- */}
-        <ul
-          className="flex gap-0 border-b border-border overflow-x-auto mt-3 scrollbar-none"
-          role="tablist"
-        >
-          {TABS.map(({ key, label }) => (
-            <li key={key} className="shrink-0" role="presentation">
-              <button
-                role="tab"
-                aria-selected={activeTab === key}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                  activeTab === key
-                    ? 'text-accent border-accent'
-                    : 'text-text-secondary hover:text-text-primary border-transparent'
-                }`}
-                onClick={() => setActiveTab(key)}
-              >
-                {label}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="relative mt-3">
+          <ul
+            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none"
+            role="tablist"
+          >
+            {TABS.map(({ key, label }) => (
+              <li key={key} className="shrink-0" role="presentation">
+                <button
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                    activeTab === key
+                      ? 'text-accent border-accent'
+                      : 'text-text-secondary hover:text-text-primary border-transparent'
+                  }`}
+                  onClick={() => {
+                    startTransition(() => setActiveTab(key));
+                  }}
+                >
+                  {label}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-base to-transparent sm:hidden" />
+        </div>
       </div>
 
       {/* ---- Tab Content ---- */}
       <div className="py-6 flex-1" role="tabpanel">
         {ActiveComponent && (
-          <ActiveComponent ticker={ticker} company={company} />
+          <Suspense fallback={<TabPanelFallback tabKey={activeTab} />}>
+            <ActiveComponent ticker={ticker} company={company} />
+          </Suspense>
         )}
       </div>
     </div>

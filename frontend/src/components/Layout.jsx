@@ -1,8 +1,20 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import AuthModal from './auth/AuthModal';
+import { useAuth } from './auth/useAuth';
 
 function Layout({ children }) {
   const navigate = useNavigate();
+  const {
+    authNotice,
+    isAuthenticated,
+    isBootstrapping,
+    limits,
+    logout,
+    openAuthModal,
+    setAuthNotice,
+    user,
+  } = useAuth();
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('sp-theme') || 'dark';
   });
@@ -20,6 +32,9 @@ function Layout({ children }) {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  const userLabel = user?.name || user?.email || 'Signed in';
+  const userInitial = (userLabel || 'U').trim().charAt(0).toUpperCase();
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -33,6 +48,21 @@ function Layout({ children }) {
           </Link>
 
           <nav className="flex items-center gap-6">
+            {!isBootstrapping && authNotice && (
+              <button
+                type="button"
+                onClick={() => setAuthNotice(null)}
+                className={`hidden rounded-full px-3 py-1 text-xs font-medium lg:inline-flex ${
+                  authNotice.tone === 'error'
+                    ? 'bg-[rgba(239,68,68,0.12)] text-[rgb(248,113,113)]'
+                    : authNotice.tone === 'success'
+                    ? 'bg-[rgba(16,185,129,0.12)] text-[rgb(110,231,183)]'
+                    : 'bg-elevated text-text-secondary'
+                }`}
+              >
+                {authNotice.message}
+              </button>
+            )}
             <Link
               to="/screener"
               className="font-body text-sm font-medium text-text-secondary no-underline hover:text-text-primary transition-colors"
@@ -105,6 +135,40 @@ function Layout({ children }) {
                 </svg>
               )}
             </button>
+            {isBootstrapping ? (
+              <div className="hidden h-9 w-28 rounded-full bg-elevated md:block" />
+            ) : isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <div className="hidden items-center gap-2 rounded-full border border-border bg-elevated px-3 py-1.5 md:flex">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-semibold text-text-inverse">
+                    {userInitial}
+                  </span>
+                  <div className="flex flex-col leading-tight">
+                    <span className="max-w-[160px] truncate text-sm font-medium text-text-primary">
+                      {userLabel}
+                    </span>
+                    <span className="text-[11px] text-text-tertiary">
+                      {limits?.authenticated_daily || 50} AI prompts/day
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="rounded-full border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openAuthModal('login')}
+                className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-hover"
+              >
+                Sign in
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -120,6 +184,7 @@ function Layout({ children }) {
           Powered by SEC EDGAR + AI
         </span>
       </footer>
+      <AuthModal />
     </div>
   );
 }

@@ -1,23 +1,19 @@
-import { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScreener } from '../hooks/useStockData';
 
-/* ------------------------------------------------------------------ */
-/*  Constants                                                          */
-/* ------------------------------------------------------------------ */
-
 const SECTORS = [
-  'Technology',
-  'Healthcare',
-  'Financial Services',
-  'Consumer Cyclical',
   'Communication Services',
-  'Industrials',
-  'Consumer Defensive',
+  'Consumer Discretionary',
+  'Consumer Staples',
   'Energy',
-  'Utilities',
+  'Financials',
+  'Health Care',
+  'Industrials',
+  'Information Technology',
+  'Materials',
   'Real Estate',
-  'Basic Materials',
+  'Utilities',
 ];
 
 const MARKET_CAP_PRESETS = [
@@ -30,35 +26,41 @@ const COLUMNS = [
   { key: 'ticker', label: 'Ticker', sortable: true },
   { key: 'name', label: 'Company', sortable: true },
   { key: 'sector', label: 'Sector', sortable: true },
-  { key: 'price', label: 'Price', sortable: true, numeric: true },
+  { key: 'current_price', label: 'Price', sortable: true, numeric: true },
   { key: 'market_cap', label: 'Market Cap', sortable: true, numeric: true },
   { key: 'pe_ratio', label: 'P/E', sortable: true, numeric: true },
-  { key: 'dividend_yield', label: 'Dividend %', sortable: true, numeric: true },
-  { key: 'profit_margin', label: 'Margin %', sortable: true, numeric: true },
-  { key: 'roe', label: 'ROE', sortable: true, numeric: true },
+  { key: 'revenue_growth_yoy', label: 'Rev YoY', sortable: true, numeric: true, percent: true },
+  { key: 'gross_margin', label: 'Gross Margin', sortable: true, numeric: true, percent: true },
+  { key: 'operating_margin', label: 'Op Margin', sortable: true, numeric: true, percent: true },
+  { key: 'debt_to_equity', label: 'Debt / Equity', sortable: true, numeric: true },
 ];
-
-const PAGE_SIZE = 20;
 
 const INITIAL_FILTERS = {
   sector: '',
-  pe_min: '',
-  pe_max: '',
+  industry: '',
   market_cap_min: '',
   market_cap_max: '',
-  dividend_yield_min: '',
-  dividend_yield_max: '',
-  profit_margin_min: '',
-  profit_margin_max: '',
-  roe_min: '',
-  roe_max: '',
+  pe_min: '',
+  pe_max: '',
+  positive_fcf: false,
   revenue_growth_min: '',
   revenue_growth_max: '',
+  gross_margin_min: '',
+  gross_margin_max: '',
+  operating_margin_min: '',
+  operating_margin_max: '',
+  debt_to_equity_min: '',
+  debt_to_equity_max: '',
 };
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
+const PERCENT_FILTER_KEYS = new Set([
+  'revenue_growth_min',
+  'revenue_growth_max',
+  'gross_margin_min',
+  'gross_margin_max',
+  'operating_margin_min',
+  'operating_margin_max',
+]);
 
 function formatMarketCap(value) {
   if (value == null) return '--';
@@ -81,7 +83,7 @@ function formatPercent(value) {
   if (value == null) return '--';
   const num = Number(value);
   if (Number.isNaN(num)) return '--';
-  return `${num.toFixed(2)}%`;
+  return `${(num * 100).toFixed(2)}%`;
 }
 
 function formatPrice(value) {
@@ -91,24 +93,16 @@ function formatPrice(value) {
   return `$${num.toFixed(2)}`;
 }
 
-/* ------------------------------------------------------------------ */
-/*  FilterGroup Component                                              */
-/* ------------------------------------------------------------------ */
-
 function FilterGroup({ label, children }) {
   return (
-    <div className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2">
-      <span className="font-body text-xs font-medium text-text-secondary uppercase tracking-wider">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+      <span className="font-body text-xs font-medium uppercase tracking-wider text-text-secondary">
         {label}
       </span>
       {children}
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  MinMaxInputs Component                                             */
-/* ------------------------------------------------------------------ */
 
 function MinMaxInputs({ minValue, maxValue, onMinChange, onMaxChange, placeholder }) {
   return (
@@ -117,40 +111,32 @@ function MinMaxInputs({ minValue, maxValue, onMinChange, onMaxChange, placeholde
         type="number"
         placeholder={placeholder?.min ?? 'Min'}
         value={minValue}
-        onChange={(e) => onMinChange(e.target.value)}
-        className="w-full bg-elevated border border-border rounded-sm px-2 py-1.5 font-data text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent transition-colors"
+        onChange={(event) => onMinChange(event.target.value)}
+        className="w-full rounded-sm border border-border bg-elevated px-2 py-1.5 font-data text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
       />
-      <span className="text-text-tertiary text-xs shrink-0">to</span>
+      <span className="shrink-0 text-xs text-text-tertiary">to</span>
       <input
         type="number"
         placeholder={placeholder?.max ?? 'Max'}
         value={maxValue}
-        onChange={(e) => onMaxChange(e.target.value)}
-        className="w-full bg-elevated border border-border rounded-sm px-2 py-1.5 font-data text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent transition-colors"
+        onChange={(event) => onMaxChange(event.target.value)}
+        className="w-full rounded-sm border border-border bg-elevated px-2 py-1.5 font-data text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
       />
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  SkeletonRow Component                                              */
-/* ------------------------------------------------------------------ */
-
 function SkeletonRow() {
   return (
     <tr>
-      {COLUMNS.map((col) => (
-        <td key={col.key} className="px-3 py-3">
+      {COLUMNS.map((column) => (
+        <td key={column.key} className="px-3 py-3">
           <div className="skeleton h-4 rounded" />
         </td>
       ))}
     </tr>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  SortIcon Component                                                 */
-/* ------------------------------------------------------------------ */
 
 function SortIcon({ direction }) {
   if (!direction) {
@@ -164,13 +150,14 @@ function SortIcon({ direction }) {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="inline-block ml-1 opacity-30"
+        className="ml-1 inline-block opacity-30"
       >
         <path d="M7 15l5 5 5-5" />
         <path d="M7 9l5-5 5 5" />
       </svg>
     );
   }
+
   return (
     <svg
       width="12"
@@ -181,235 +168,151 @@ function SortIcon({ direction }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="inline-block ml-1"
+      className="ml-1 inline-block"
     >
-      {direction === 'asc' ? (
-        <path d="M7 14l5-5 5 5" />
-      ) : (
-        <path d="M7 10l5 5 5-5" />
-      )}
+      {direction === 'asc' ? <path d="M7 14l5-5 5 5" /> : <path d="M7 10l5 5 5-5" />}
     </svg>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  ScreenerPage                                                       */
-/* ------------------------------------------------------------------ */
+function buildFilterPayload(filters) {
+  const payload = {};
+
+  Object.entries(filters).forEach(([key, rawValue]) => {
+    if (rawValue === '' || rawValue == null) return;
+
+    if (key === 'positive_fcf') {
+      if (rawValue) payload[key] = 'true';
+      return;
+    }
+
+    if (PERCENT_FILTER_KEYS.has(key)) {
+      payload[key] = String(Number(rawValue) / 100);
+      return;
+    }
+
+    payload[key] = rawValue;
+  });
+
+  return payload;
+}
+
+function renderCell(row, column) {
+  switch (column.key) {
+    case 'ticker':
+      return <span className="font-data text-xs font-medium text-accent">{row.ticker}</span>;
+    case 'name':
+      return <span className="block max-w-[200px] truncate font-body text-xs text-text-primary">{row.name ?? '--'}</span>;
+    case 'sector':
+      return <span className="font-body text-xs text-text-secondary">{row.sector ?? '--'}</span>;
+    case 'current_price':
+      return <span className="font-data text-xs text-text-primary">{formatPrice(row.current_price)}</span>;
+    case 'market_cap':
+      return <span className="font-data text-xs text-text-primary">{formatMarketCap(row.market_cap)}</span>;
+    case 'pe_ratio':
+    case 'debt_to_equity':
+      return <span className="font-data text-xs text-text-primary">{formatNumber(row[column.key])}</span>;
+    case 'revenue_growth_yoy':
+    case 'gross_margin':
+    case 'operating_margin':
+      return <span className="font-data text-xs text-text-primary">{formatPercent(row[column.key])}</span>;
+    default:
+      return '--';
+  }
+}
 
 export default function ScreenerPage() {
   const navigate = useNavigate();
-
-  /* ---- Filter state ---- */
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState({});
-
-  /* ---- Sort state ---- */
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState(null); // 'asc' | 'desc'
-
-  /* ---- Pagination ---- */
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [sortKey, setSortKey] = useState('market_cap');
+  const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(1);
 
-  /* ---- Data ---- */
-  const { data, isLoading } = useScreener(appliedFilters);
-  const results = data?.results ?? data ?? [];
+  const { data, isLoading, isError, error, isFetching } = useScreener(appliedFilters, sortKey, sortDir, page);
 
-  /* ---- Client-side sort ---- */
-  const sortedResults = useMemo(() => {
-    if (!sortKey || !sortDir) return results;
-    const col = COLUMNS.find((c) => c.key === sortKey);
-    return [...results].sort((a, b) => {
-      let aVal = a[sortKey];
-      let bVal = b[sortKey];
-      if (col?.numeric) {
-        aVal = aVal != null ? Number(aVal) : -Infinity;
-        bVal = bVal != null ? Number(bVal) : -Infinity;
-      } else {
-        aVal = String(aVal ?? '').toLowerCase();
-        bVal = String(bVal ?? '').toLowerCase();
-      }
-      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [results, sortKey, sortDir]);
+  const results = data?.results ?? [];
+  const totalCount = data?.count ?? 0;
+  const pageSize = results.length > 0 ? results.length : 25;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  /* ---- Paginated results ---- */
-  const totalPages = Math.max(1, Math.ceil(sortedResults.length / PAGE_SIZE));
-  const paginatedResults = sortedResults.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE,
-  );
-
-  /* ---- Handlers ---- */
   const updateFilter = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((current) => ({ ...current, [key]: value }));
   };
 
   const handleApply = () => {
-    // Build params object, omitting empty strings
-    const params = {};
-    for (const [key, value] of Object.entries(filters)) {
-      if (value !== '' && value != null) {
-        params[key] = value;
-      }
-    }
-    setAppliedFilters(params);
+    setAppliedFilters(buildFilterPayload(filters));
     setPage(1);
   };
 
   const handleClear = () => {
     setFilters(INITIAL_FILTERS);
     setAppliedFilters({});
+    setSortKey('market_cap');
+    setSortDir('desc');
     setPage(1);
-    setSortKey(null);
-    setSortDir(null);
+    setShowMoreFilters(false);
   };
 
   const handleSort = (key) => {
     if (sortKey === key) {
-      if (sortDir === 'asc') {
-        setSortDir('desc');
-      } else if (sortDir === 'desc') {
-        setSortKey(null);
-        setSortDir(null);
-      }
+      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir('asc');
+      setSortDir(['ticker', 'name', 'sector'].includes(key) ? 'asc' : 'desc');
     }
+    setPage(1);
   };
 
   const handleMarketCapPreset = (preset) => {
-    setFilters((prev) => ({
-      ...prev,
+    setFilters((current) => ({
+      ...current,
       market_cap_min: preset.min,
       market_cap_max: preset.max,
     }));
   };
 
-  const handleRowClick = (ticker) => {
-    navigate(`/stock/${ticker}`);
-  };
-
-  /* ---- Cell renderer ---- */
-  const renderCell = (row, col) => {
-    switch (col.key) {
-      case 'ticker':
-        return (
-          <span className="font-data text-xs font-medium text-accent">
-            {row.ticker}
-          </span>
-        );
-      case 'name':
-        return (
-          <span className="font-body text-xs text-text-primary truncate max-w-[200px] block">
-            {row.name ?? '--'}
-          </span>
-        );
-      case 'sector':
-        return (
-          <span className="font-body text-xs text-text-secondary">
-            {row.sector ?? '--'}
-          </span>
-        );
-      case 'price':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatPrice(row.price)}
-          </span>
-        );
-      case 'market_cap':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatMarketCap(row.market_cap)}
-          </span>
-        );
-      case 'pe_ratio':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatNumber(row.pe_ratio)}
-          </span>
-        );
-      case 'dividend_yield':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatPercent(row.dividend_yield)}
-          </span>
-        );
-      case 'profit_margin':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatPercent(row.profit_margin)}
-          </span>
-        );
-      case 'roe':
-        return (
-          <span className="font-data text-xs text-text-primary">
-            {formatPercent(row.roe)}
-          </span>
-        );
-      default:
-        return '--';
-    }
-  };
-
-  /* ================================================================ */
-  /*  Render                                                           */
-  /* ================================================================ */
+  const resultSummary = useMemo(() => {
+    if (isLoading) return 'Loading…';
+    return `${totalCount} result${totalCount === 1 ? '' : 's'}`;
+  }, [isLoading, totalCount]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
-      {/* ============================================================
-          Sidebar — Filters
-         ============================================================ */}
-      <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-4">
+    <div className="flex flex-col gap-6 lg:flex-row">
+      <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-80">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold text-text-primary">
-            Filters
-          </h2>
+          <h1 className="font-display text-2xl font-semibold text-text-primary">Stock Screener</h1>
           <button
+            type="button"
             onClick={handleClear}
-            className="font-body text-xs text-text-tertiary hover:text-accent transition-colors cursor-pointer bg-transparent border-none"
+            className="border-none bg-transparent font-body text-xs text-text-tertiary transition-colors hover:text-accent"
           >
-            Clear All
+            Reset
           </button>
         </div>
 
-        {/* Sector */}
         <FilterGroup label="Sector">
           <select
             value={filters.sector}
-            onChange={(e) => updateFilter('sector', e.target.value)}
-            className="w-full bg-elevated border border-border rounded-sm px-2 py-1.5 font-body text-xs text-text-primary focus:outline-none focus:border-accent transition-colors cursor-pointer appearance-none"
+            onChange={(event) => updateFilter('sector', event.target.value)}
+            className="w-full appearance-none rounded-sm border border-border bg-elevated px-2 py-1.5 font-body text-xs text-text-primary focus:border-accent focus:outline-none"
           >
-            <option value="">All Sectors</option>
-            {SECTORS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+            <option value="">All sectors</option>
+            {SECTORS.map((sector) => (
+              <option key={sector} value={sector}>{sector}</option>
             ))}
           </select>
         </FilterGroup>
 
-        {/* P/E Ratio */}
-        <FilterGroup label="P/E Ratio">
-          <MinMaxInputs
-            minValue={filters.pe_min}
-            maxValue={filters.pe_max}
-            onMinChange={(v) => updateFilter('pe_min', v)}
-            onMaxChange={(v) => updateFilter('pe_max', v)}
-          />
-        </FilterGroup>
-
-        {/* Market Cap */}
         <FilterGroup label="Market Cap">
-          <div className="flex flex-wrap gap-1.5 mb-1">
+          <div className="mb-1 flex flex-wrap gap-1.5">
             {MARKET_CAP_PRESETS.map((preset) => (
               <button
                 key={preset.label}
+                type="button"
                 onClick={() => handleMarketCapPreset(preset)}
-                className="font-body text-xs px-2 py-0.5 rounded-full border border-border text-text-secondary hover:text-accent hover:border-accent transition-colors cursor-pointer bg-transparent"
+                className="rounded-full border border-border bg-transparent px-2 py-0.5 font-body text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
               >
                 {preset.label}
               </button>
@@ -418,190 +321,204 @@ export default function ScreenerPage() {
           <MinMaxInputs
             minValue={filters.market_cap_min}
             maxValue={filters.market_cap_max}
-            onMinChange={(v) => updateFilter('market_cap_min', v)}
-            onMaxChange={(v) => updateFilter('market_cap_max', v)}
+            onMinChange={(value) => updateFilter('market_cap_min', value)}
+            onMaxChange={(value) => updateFilter('market_cap_max', value)}
             placeholder={{ min: 'Min ($)', max: 'Max ($)' }}
           />
         </FilterGroup>
 
-        {/* Dividend Yield */}
-        <FilterGroup label="Dividend Yield (%)">
+        <FilterGroup label="P/E Ratio">
           <MinMaxInputs
-            minValue={filters.dividend_yield_min}
-            maxValue={filters.dividend_yield_max}
-            onMinChange={(v) => updateFilter('dividend_yield_min', v)}
-            onMaxChange={(v) => updateFilter('dividend_yield_max', v)}
+            minValue={filters.pe_min}
+            maxValue={filters.pe_max}
+            onMinChange={(value) => updateFilter('pe_min', value)}
+            onMaxChange={(value) => updateFilter('pe_max', value)}
           />
         </FilterGroup>
 
-        {/* Profit Margin */}
-        <FilterGroup label="Profit Margin (%)">
-          <MinMaxInputs
-            minValue={filters.profit_margin_min}
-            maxValue={filters.profit_margin_max}
-            onMinChange={(v) => updateFilter('profit_margin_min', v)}
-            onMaxChange={(v) => updateFilter('profit_margin_max', v)}
-          />
+        <FilterGroup label="Cash Flow">
+          <label className="flex items-center gap-3 text-sm text-text-secondary">
+            <input
+              type="checkbox"
+              checked={filters.positive_fcf}
+              onChange={(event) => updateFilter('positive_fcf', event.target.checked)}
+              className="h-4 w-4 rounded border-border bg-elevated text-accent focus:ring-accent"
+            />
+            <span className="font-body text-sm">Positive free cash flow only</span>
+          </label>
         </FilterGroup>
 
-        {/* ROE */}
-        <FilterGroup label="ROE (%)">
-          <MinMaxInputs
-            minValue={filters.roe_min}
-            maxValue={filters.roe_max}
-            onMinChange={(v) => updateFilter('roe_min', v)}
-            onMaxChange={(v) => updateFilter('roe_max', v)}
-          />
-        </FilterGroup>
-
-        {/* Revenue Growth */}
-        <FilterGroup label="Revenue Growth (%)">
-          <MinMaxInputs
-            minValue={filters.revenue_growth_min}
-            maxValue={filters.revenue_growth_max}
-            onMinChange={(v) => updateFilter('revenue_growth_min', v)}
-            onMaxChange={(v) => updateFilter('revenue_growth_max', v)}
-          />
-        </FilterGroup>
-
-        {/* Apply button */}
         <button
+          type="button"
+          onClick={() => setShowMoreFilters((current) => !current)}
+          className="w-full rounded-lg border border-border bg-surface px-4 py-2 text-left font-body text-sm text-text-secondary transition-colors hover:border-accent hover:text-text-primary"
+        >
+          {showMoreFilters ? 'Hide more filters' : 'More filters'}
+        </button>
+
+        {showMoreFilters ? (
+          <div className="flex flex-col gap-4">
+            <FilterGroup label="Industry">
+              <input
+                type="text"
+                value={filters.industry}
+                onChange={(event) => updateFilter('industry', event.target.value)}
+                placeholder="Semiconductors, Software…"
+                className="w-full rounded-sm border border-border bg-elevated px-2 py-1.5 font-body text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+              />
+            </FilterGroup>
+
+            <FilterGroup label="Revenue Growth (%)">
+              <MinMaxInputs
+                minValue={filters.revenue_growth_min}
+                maxValue={filters.revenue_growth_max}
+                onMinChange={(value) => updateFilter('revenue_growth_min', value)}
+                onMaxChange={(value) => updateFilter('revenue_growth_max', value)}
+              />
+            </FilterGroup>
+
+            <FilterGroup label="Gross Margin (%)">
+              <MinMaxInputs
+                minValue={filters.gross_margin_min}
+                maxValue={filters.gross_margin_max}
+                onMinChange={(value) => updateFilter('gross_margin_min', value)}
+                onMaxChange={(value) => updateFilter('gross_margin_max', value)}
+              />
+            </FilterGroup>
+
+            <FilterGroup label="Operating Margin (%)">
+              <MinMaxInputs
+                minValue={filters.operating_margin_min}
+                maxValue={filters.operating_margin_max}
+                onMinChange={(value) => updateFilter('operating_margin_min', value)}
+                onMaxChange={(value) => updateFilter('operating_margin_max', value)}
+              />
+            </FilterGroup>
+
+            <FilterGroup label="Debt / Equity">
+              <MinMaxInputs
+                minValue={filters.debt_to_equity_min}
+                maxValue={filters.debt_to_equity_max}
+                onMinChange={(value) => updateFilter('debt_to_equity_min', value)}
+                onMaxChange={(value) => updateFilter('debt_to_equity_max', value)}
+              />
+            </FilterGroup>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
           onClick={handleApply}
-          className="w-full bg-accent hover:bg-accent-hover text-text-inverse font-body text-sm font-medium py-2.5 rounded-md transition-colors cursor-pointer border-none"
+          className="w-full rounded-md border-none bg-accent py-2.5 font-body text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
         >
           Apply Filters
         </button>
       </aside>
 
-      {/* ============================================================
-          Main — Results Table
-         ============================================================ */}
-      <section className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="font-display text-2xl font-bold text-text-primary">
-            Stock Screener
-          </h1>
-          {!isLoading && (
-            <span className="font-data text-xs text-text-tertiary">
-              {sortedResults.length} result{sortedResults.length !== 1 ? 's' : ''}
-            </span>
-          )}
+      <section className="min-w-0 flex-1">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="font-body text-sm text-text-secondary">Focused V1 filters on canonical metric snapshots.</p>
+          </div>
+          <span className="font-data text-xs text-text-tertiary">
+            {isFetching && !isLoading ? 'Refreshing…' : resultSummary}
+          </span>
         </div>
 
-        <div className="bg-surface border border-border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-border">
-                  {COLUMNS.map((col) => (
-                    <th
-                      key={col.key}
-                      onClick={col.sortable ? () => handleSort(col.key) : undefined}
-                      className={`px-3 py-3 text-left font-body text-xs font-medium text-text-secondary whitespace-nowrap ${
-                        col.sortable
-                          ? 'cursor-pointer select-none hover:text-text-primary transition-colors'
-                          : ''
-                      } ${col.numeric ? 'text-right' : ''}`}
-                    >
-                      {col.label}
-                      {col.sortable && (
-                        <SortIcon
-                          direction={sortKey === col.key ? sortDir : null}
-                        />
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {/* Loading skeleton */}
-                {isLoading &&
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <SkeletonRow key={i} />
-                  ))}
-
-                {/* Empty state */}
-                {!isLoading && sortedResults.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={COLUMNS.length}
-                      className="px-3 py-16 text-center"
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <svg
-                          width="32"
-                          height="32"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="text-text-tertiary"
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          {isError ? (
+            <div className="px-6 py-16 text-center">
+              <p className="font-body text-base text-error">Screener unavailable. Try again.</p>
+              {error?.message ? (
+                <p className="mt-2 font-body text-sm text-text-tertiary">{error.message}</p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {COLUMNS.map((column) => (
+                        <th
+                          key={column.key}
+                          onClick={column.sortable ? () => handleSort(column.key) : undefined}
+                          className={`px-3 py-3 text-left font-body text-xs font-medium text-text-secondary whitespace-nowrap ${
+                            column.sortable
+                              ? 'cursor-pointer select-none transition-colors hover:text-text-primary'
+                              : ''
+                          } ${column.numeric ? 'text-right' : ''}`}
                         >
-                          <circle cx="11" cy="11" r="8" />
-                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                        </svg>
-                        <p className="font-body text-sm text-text-secondary">
-                          No companies match your filters
-                        </p>
-                        <button
-                          onClick={handleClear}
-                          className="font-body text-xs text-accent hover:text-accent-hover transition-colors bg-transparent border-none cursor-pointer"
-                        >
-                          Clear all filters
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-
-                {/* Data rows */}
-                {!isLoading &&
-                  paginatedResults.map((row) => (
-                    <tr
-                      key={row.ticker}
-                      onClick={() => handleRowClick(row.ticker)}
-                      className="border-b border-border last:border-b-0 hover:bg-elevated cursor-pointer transition-colors"
-                    >
-                      {COLUMNS.map((col) => (
-                        <td
-                          key={col.key}
-                          className={`px-3 py-3 ${col.numeric ? 'text-right' : ''}`}
-                        >
-                          {renderCell(row, col)}
-                        </td>
+                          {column.label}
+                          {column.sortable ? (
+                            <SortIcon direction={sortKey === column.key ? sortDir : null} />
+                          ) : null}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
 
-          {/* Pagination */}
-          {!isLoading && sortedResults.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <span className="font-body text-xs text-text-tertiary">
-                Page {page} of {totalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="font-body text-xs px-3 py-1.5 rounded-md border border-border text-text-secondary hover:text-text-primary hover:border-border-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer bg-transparent"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="font-body text-xs px-3 py-1.5 rounded-md border border-border text-text-secondary hover:text-text-primary hover:border-border-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer bg-transparent"
-                >
-                  Next
-                </button>
+                  <tbody>
+                    {isLoading ? Array.from({ length: 8 }).map((_, index) => <SkeletonRow key={index} />) : null}
+
+                    {!isLoading && results.length === 0 ? (
+                      <tr>
+                        <td colSpan={COLUMNS.length} className="px-6 py-16 text-center">
+                          <p className="font-body text-sm text-text-secondary">
+                            No companies match your filters. Try broadening your criteria.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleClear}
+                            className="mt-3 border-none bg-transparent font-body text-xs text-accent transition-colors hover:text-accent-hover"
+                          >
+                            Reset filters
+                          </button>
+                        </td>
+                      </tr>
+                    ) : null}
+
+                    {!isLoading ? results.map((row) => (
+                      <tr
+                        key={row.ticker}
+                        onClick={() => navigate(`/stock/${row.ticker}`)}
+                        className="cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-elevated"
+                      >
+                        {COLUMNS.map((column) => (
+                          <td key={column.key} className={`px-3 py-3 ${column.numeric ? 'text-right' : ''}`}>
+                            {renderCell(row, column)}
+                          </td>
+                        ))}
+                      </tr>
+                    )) : null}
+                  </tbody>
+                </table>
               </div>
-            </div>
+
+              {!isLoading && totalPages > 1 ? (
+                <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                  <span className="font-body text-xs text-text-tertiary">Page {page} of {totalPages}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={page === 1}
+                      className="rounded-md border border-border bg-transparent px-3 py-1.5 font-body text-xs text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      disabled={page === totalPages}
+                      className="rounded-md border border-border bg-transparent px-3 py-1.5 font-body text-xs text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </section>
