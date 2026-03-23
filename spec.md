@@ -8,7 +8,7 @@
 
 ## 1.0 Product Summary
 
-StockPulse V1 is a public-first stock research product for S&P 500 companies. It should feel like a cleaner, faster, more premium fundamentals research tool: search a company, understand the business quickly, inspect financial and valuation context, and ask grounded follow-up questions from the same structured data.
+StockPulse V1 is a public-first stock research product for S&P 500 companies. It should feel like a cleaner, faster, more premium fundamentals research tool: search a company, understand the business quickly, inspect financial and valuation context, and ask grounded follow-up questions anchored in the same structured data, with general financial context where it helps explain the numbers.
 
 **Dimensions:**
 - 1.1 DONE Public browsing is open by default.
@@ -25,7 +25,7 @@ These are the product and engineering choices that should be treated as fixed un
 - 2.1 DONE Launch scope is the S&P 500, with a 25-company seed set used for early development and verification.
 - 2.2 DONE Authentication is in V1: Google sign-in is primary, with email/password as fallback.
 - 2.3 DONE AI quotas are `10/day` anonymous and `50/day` authenticated, plus a `3/minute` IP burst backstop.
-- 2.4 DONE AI budget is enforced in-product with a hard daily cap and database-backed accounting.
+- 2.4 DONE AI cost safety is enforced operationally with limited provider API key credits, while in-product quotas remain `10/day` anonymous and `50/day` authenticated.
 - 2.5 DONE Price charts are line charts only in V1, using adjusted close by default.
 - 2.6 DONE V1 intentionally uses two charting libraries: `Recharts` for Financials and Valuation, `lightweight-charts` for Price.
 - 2.7 DONE The Valuation tab is a Qualtrim-like DCF workflow with `Earnings` and `Cash Flow` modes and three primary assumptions, plus an editable current metric as an optional fourth input.
@@ -45,9 +45,9 @@ These are the product and engineering choices that should be treated as fixed un
 
 **Dimensions:**
 - 4.1 DONE SEC normalization is the product-critical layer and feeds charts, screener, valuation, and AI.
-- 4.2 DONE PostgreSQL is the source of truth for canonical facts, snapshots, price cache state, usage counters, and AI budget state.
+- 4.2 DONE PostgreSQL is the source of truth for canonical facts, snapshots, price cache state, and usage counters.
 - 4.3 DONE Screener reads from `MetricSnapshot`, not heavy request-time joins on raw facts.
-- 4.4 DONE AI is grounded only in structured StockPulse data, not filing text or vector retrieval.
+- 4.4 DONE AI uses structured StockPulse data as its primary grounding source, may add general financial knowledge for explanation, and does not use filing text or vector retrieval.
 - 4.5 DONE Authentication uses secure cookie-based auth with backend-managed Google redirect/callback.
 - 4.6 DONE Raw SEC payloads live in a bounded cold audit store, not on the hot company row.
 
@@ -61,7 +61,7 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 5.3 DONE M3 — Public Read APIs and Stock Detail Shell: landing, company detail, overview, and Financials hero
 - 5.4 DONE M4 — Price, Valuation, and Screener: cache-backed price ranges with stale fallback, guarded Qualtrim-style DCF, and a focused `MetricSnapshot` screener
 - 5.5 DONE M5 — Authentication: secure cookies, `/api/auth/session/` bootstrap, Google-first auth flow, frontend auth context, and shell auth modal
-- 5.6 DONE M6 — AI Copilot: grounded structured context, bounded follow-up turns, provider seam, quota + spend enforcement, and canonical SSE UI
+- 5.6 DONE M6 — AI Copilot: structured company context, bounded follow-up turns, provider seam, quota enforcement, and canonical SSE UI
 - 5.7 PENDING M7 — Hardening and Deploy: scheduled worker, production config, accessibility, performance, docs polish
 
 ## 6.0 Verification and Launch Bar

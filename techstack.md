@@ -49,7 +49,6 @@ The V1 stack is intentionally conservative:
 | Ingestion runs | PostgreSQL `IngestionRun` | Operational visibility |
 | Raw SEC payload retention | PostgreSQL `RawSecPayload` | Cold audit/debug store, off the hot company row, with bounded retention |
 | AI quotas | PostgreSQL `AIUsageCounter` | Daily quota tracking |
-| AI daily budget | PostgreSQL `AIBudgetDay` | Product-enforced spend cap |
 
 ## Auth and Session Model
 
@@ -58,8 +57,8 @@ The V1 stack is intentionally conservative:
 - Google sign-in is part of V1
 - refresh is cookie-based; the frontend does not post a refresh token body
 - anonymous AI usage is tracked by a signed `anon_ai_id` cookie
-- the hard daily AI budget is configured by environment variable and enforced before model invocation
-- AI quota and budget resets use the `America/New_York` calendar day
+- AI quota resets use the `America/New_York` calendar day
+- AI cost safety comes from limited provider API key credits rather than database-backed spend accounting
 
 ## Job Execution Model
 

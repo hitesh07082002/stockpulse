@@ -6,7 +6,7 @@
 
 ## Product Promise
 
-Search a company, understand its business and financial trajectory quickly, inspect price and valuation context, and ask grounded follow-up questions from the same structured data.
+Search a company, understand its business and financial trajectory quickly, inspect price and valuation context, and ask follow-up questions grounded in the same structured data, with general financial context used when it clarifies the answer.
 
 This is a research product, not a brokerage product and not a trading terminal.
 
@@ -162,15 +162,15 @@ Does not include:
 ### 8. AI Copilot
 
 Purpose:
-- explain the numbers already visible in StockPulse
+- explain the numbers already visible in StockPulse and add concise financial context when helpful
 
 Includes:
 - per-company copilot
 - bounded follow-up questions from the active browser session
 - SSE streaming responses
-- grounded answers from structured StockPulse data
+- answers grounded primarily in structured StockPulse data, with general financial knowledge allowed for context and explanation
 - honesty about sparse or weak coverage
-- explicit quota, budget, timeout, and provider-unavailable states
+- explicit quota, timeout, and provider-unavailable states
 - anonymous quota exhaustion -> sign-in upgrade path
 
 Limits:
