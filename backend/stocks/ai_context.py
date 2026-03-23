@@ -32,7 +32,7 @@ def build_structured_context(company):
             metric_key__in=AI_CONTEXT_METRICS,
         )
         .order_by("-fiscal_year", "-period_end", "metric_key")[
-            : settings.AI_CONTEXT_ANNUAL_PERIODS * len(AI_CONTEXT_METRICS) * 2
+            : settings.AI_CONTEXT_ANNUAL_PERIODS * len(AI_CONTEXT_METRICS)
         ]
     )
     quarterly_facts = list(
@@ -42,7 +42,7 @@ def build_structured_context(company):
             metric_key__in=AI_CONTEXT_METRICS,
         )
         .order_by("-fiscal_year", "-fiscal_quarter", "-period_end", "metric_key")[
-            : settings.AI_CONTEXT_QUARTERLY_PERIODS * len(AI_CONTEXT_METRICS) * 2
+            : settings.AI_CONTEXT_QUARTERLY_PERIODS * len(AI_CONTEXT_METRICS)
         ]
     )
 
@@ -59,35 +59,39 @@ def build_structured_context(company):
     snapshot = _serialize_snapshot(company)
     coverage = _build_coverage(annual_series, quarterly_series, snapshot)
 
-    return {
-        "identity": {
-            "ticker": company.ticker,
-            "name": company.name,
-            "sector": company.sector or None,
-            "industry": company.industry or None,
-            "exchange": company.exchange or None,
-            "description": company.description or None,
-            "website": company.website or None,
-            "current_price": _to_number(company.current_price),
-            "market_cap": company.market_cap,
-            "shares_outstanding": company.shares_outstanding,
-        },
-        "freshness": {
-            "quote_updated_at": _iso_datetime(company.quote_updated_at),
-            "facts_updated_at": _iso_datetime(company.facts_updated_at),
-            "quote_age_hours": _age_hours(company.quote_updated_at),
-            "facts_age_hours": _age_hours(company.facts_updated_at),
-            "has_quote": company.current_price is not None,
-        },
-        "snapshot": snapshot,
-        "annual_series": annual_series,
-        "quarterly_series": quarterly_series,
-        "coverage": coverage,
-    }
+    return _drop_none(
+        {
+            "identity": {
+                "ticker": company.ticker,
+                "name": company.name,
+                "sector": company.sector or None,
+                "industry": company.industry or None,
+                "exchange": company.exchange or None,
+                "description": company.description or None,
+                "website": company.website or None,
+                "current_price": _to_number(company.current_price),
+                "market_cap": company.market_cap,
+                "shares_outstanding": company.shares_outstanding,
+            },
+            "freshness": {
+                "quote_updated_at": _iso_datetime(company.quote_updated_at),
+                "facts_updated_at": _iso_datetime(company.facts_updated_at),
+                "quote_age_hours": _age_hours(company.quote_updated_at),
+                "facts_age_hours": _age_hours(company.facts_updated_at),
+                "has_quote": company.current_price is not None,
+            },
+            "snapshot": snapshot,
+            "annual_series": annual_series,
+            "quarterly_series": quarterly_series,
+            "coverage": coverage,
+        }
+    )
 
 
 def build_stream_meta(company, context, remaining_daily_quota=None):
-    quote_age_hours = context["freshness"]["quote_age_hours"]
+    freshness = context.get("freshness", {})
+    coverage = context.get("coverage", {})
+    quote_age_hours = freshness.get("quote_age_hours")
     quote_freshness = (
         f"Quote updated {quote_age_hours}h ago"
         if quote_age_hours is not None
@@ -96,17 +100,17 @@ def build_stream_meta(company, context, remaining_daily_quota=None):
     return {
         "ticker": company.ticker,
         "company_name": company.name,
-        "quote_updated_at": context["freshness"]["quote_updated_at"],
-        "facts_updated_at": context["freshness"]["facts_updated_at"],
+        "quote_updated_at": freshness.get("quote_updated_at"),
+        "facts_updated_at": freshness.get("facts_updated_at"),
         "quote_freshness": quote_freshness,
-        "coverage_summary": context["coverage"]["summary"],
+        "coverage_summary": coverage.get("summary"),
         "remaining_quota": remaining_daily_quota,
         "coverage": {
-            "is_sparse": context["coverage"]["is_sparse"],
-            "summary": context["coverage"]["summary"],
-            "notes": context["coverage"]["notes"],
-            "annual_period_count": context["coverage"]["annual_period_count"],
-            "quarterly_period_count": context["coverage"]["quarterly_period_count"],
+            "is_sparse": coverage.get("is_sparse"),
+            "summary": coverage.get("summary"),
+            "notes": coverage.get("notes"),
+            "annual_period_count": coverage.get("annual_period_count"),
+            "quarterly_period_count": coverage.get("quarterly_period_count"),
         },
     }
 
@@ -116,7 +120,7 @@ def render_system_prompt(context):
     company_name = identity["name"]
     ticker = identity["ticker"]
     sector = identity.get("sector") or "sector unavailable"
-    payload = json.dumps(context, indent=2, sort_keys=True)
+    payload = json.dumps(context, separators=(",", ":"), sort_keys=True)
     return (
         "You are StockPulse Copilot, a sharp equity research analyst. Be concise, quantitative, and useful.\n"
         f"You are helping the user analyze {company_name} ({ticker}, {sector}). Below is StockPulse's structured financial data for this company.\n"
@@ -266,4 +270,16 @@ def _to_number(value):
         return None
     if isinstance(value, Decimal):
         return float(value)
+    return value
+
+
+def _drop_none(value):
+    if isinstance(value, dict):
+        return {
+            key: cleaned
+            for key, nested in value.items()
+            if (cleaned := _drop_none(nested)) is not None
+        }
+    if isinstance(value, list):
+        return [_drop_none(item) for item in value]
     return value
