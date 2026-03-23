@@ -115,7 +115,7 @@ Includes:
 - 5-year projection chart
 - summary result cards
 - warnings for bad-fit sectors or weak data
-- not-applicable state for financial-sector companies
+- financial-sector caution warning in `Cash Flow` mode instead of a hard not-applicable state
 - guardrails for negative earnings, negative free cash flow, and missing shares outstanding
 - `Recharts`-style dashboard visuals for the valuation workspace
 

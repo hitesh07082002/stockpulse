@@ -423,7 +423,7 @@ def test_prices_endpoint_rejects_invalid_ranges(api_client, company):
 
 
 @pytest.mark.django_db
-def test_valuation_inputs_disable_financial_sector_companies(api_client):
+def test_valuation_inputs_warn_for_financial_sector_companies_only_in_cash_flow_mode(api_client):
     company = Company.objects.create(
         cik="0001067983",
         ticker="SCHW",
@@ -444,15 +444,28 @@ def test_valuation_inputs_disable_financial_sector_companies(api_client):
         filed_date=date(2025, 2, 1),
         source_form="10-K",
     )
+    FinancialFact.objects.create(
+        company=company,
+        metric_key="free_cash_flow",
+        period_type="annual",
+        fiscal_year=2024,
+        value=Decimal("5000000000"),
+        period_end=date(2024, 12, 31),
+        filed_date=date(2025, 2, 1),
+        source_form="10-K",
+    )
 
     response = api_client.get("/api/companies/SCHW/valuation-inputs/")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["not_applicable"] is True
-    assert payload["guardrails"]["financial_sector_disabled"] is True
-    assert payload["earnings_mode"]["available"] is False
-    assert payload["cash_flow_mode"]["available"] is False
+    assert payload["not_applicable"] is False
+    assert payload["guardrails"]["financial_sector_caution"] is True
+    assert payload["warnings"] == []
+    assert payload["earnings_mode"]["available"] is True
+    assert payload["earnings_mode"]["warnings"] == []
+    assert payload["cash_flow_mode"]["available"] is True
+    assert any("simplified cash-flow DCF" in warning for warning in payload["cash_flow_mode"]["warnings"])
 
 
 @pytest.mark.django_db
@@ -486,8 +499,8 @@ def test_valuation_inputs_emit_negative_metric_warnings(api_client, company):
     payload = response.json()
     assert payload["guardrails"]["negative_earnings"] is True
     assert payload["guardrails"]["negative_free_cash_flow"] is True
-    assert any("Trailing earnings are negative" in warning for warning in payload["warnings"])
-    assert any("Free cash flow is currently negative" in warning for warning in payload["warnings"])
+    assert any("Trailing earnings are negative" in warning for warning in payload["earnings_mode"]["warnings"])
+    assert any("Free cash flow is currently negative" in warning for warning in payload["cash_flow_mode"]["warnings"])
 
 
 @pytest.mark.django_db
@@ -501,6 +514,7 @@ def test_valuation_inputs_require_shares_for_cash_flow_mode(api_client, company)
     payload = response.json()
     assert payload["guardrails"]["missing_shares_outstanding"] is True
     assert payload["cash_flow_mode"]["available"] is False
+    assert any("shares outstanding" in warning.lower() for warning in payload["cash_flow_mode"]["warnings"])
     assert "shares outstanding" in payload["cash_flow_mode"]["availability_reason"].lower()
 
 

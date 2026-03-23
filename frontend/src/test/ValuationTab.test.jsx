@@ -14,12 +14,36 @@ describe('ValuationTab', () => {
     useValuationInputsMock.mockReset();
   });
 
-  it('shows the financial-sector not-applicable state', () => {
+  it('shows the financial-sector caution only in cash-flow mode', () => {
     useValuationInputsMock.mockReturnValue({
       data: {
-        not_applicable: true,
-        not_applicable_reason: 'Not applicable for financial sector companies.',
-        warnings: ['Valuation is not applicable for financial sector companies in V1.'],
+        not_applicable: false,
+        warnings: [],
+        current_price: 70,
+        projection_years_default: 5,
+        guardrails: {
+          financial_sector_caution: true,
+        },
+        earnings_mode: {
+          available: true,
+          warnings: [],
+          current_metric_label: 'EPS',
+          current_metric_value: 3,
+          growth_rate_default: 8,
+          terminal_multiple_default: 14,
+          desired_return_default: 15,
+          current_trading_multiple: 20,
+        },
+        cash_flow_mode: {
+          available: true,
+          warnings: ['Financial companies fit a simplified cash-flow DCF less cleanly, so use this output as a rough framing tool.'],
+          current_metric_label: 'FCF Per Share',
+          current_metric_value: 4,
+          growth_rate_default: 6,
+          terminal_multiple_default: 10,
+          desired_return_default: 15,
+          current_trading_multiple: 17,
+        },
       },
       isLoading: false,
       error: null,
@@ -27,18 +51,25 @@ describe('ValuationTab', () => {
 
     render(<ValuationTab ticker="SCHW" />);
 
-    expect(screen.getAllByText(/not applicable for financial sector companies/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/financial companies fit a simplified cash-flow dcf less cleanly/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /assumptions/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /5-year projection/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /cash flow/i }));
+
+    expect(screen.getByText(/financial companies fit a simplified cash-flow dcf less cleanly/i)).toBeInTheDocument();
   });
 
   it('shows cash-flow mode availability reasons when guardrails block it', () => {
     useValuationInputsMock.mockReturnValue({
       data: {
         not_applicable: false,
-        warnings: ['Cash Flow mode requires shares outstanding before per-share valuation can be shown.'],
+        warnings: [],
         current_price: 100,
         projection_years_default: 5,
         earnings_mode: {
           available: true,
+          warnings: [],
           current_metric_label: 'EPS',
           current_metric_value: 5,
           growth_rate_default: 10,
@@ -49,6 +80,7 @@ describe('ValuationTab', () => {
         cash_flow_mode: {
           available: false,
           availability_reason: 'Missing shares outstanding for per-share cash flow valuation.',
+          warnings: ['Cash Flow mode requires shares outstanding before per-share valuation can be shown.'],
           current_metric_label: 'FCF Per Share',
           current_metric_value: null,
           growth_rate_default: 10,
@@ -77,6 +109,7 @@ describe('ValuationTab', () => {
         projection_years_default: 5,
         earnings_mode: {
           available: true,
+          warnings: [],
           current_metric_label: 'EPS',
           current_metric_value: 5,
           growth_rate_default: 10,
@@ -86,6 +119,7 @@ describe('ValuationTab', () => {
         },
         cash_flow_mode: {
           available: true,
+          warnings: [],
           current_metric_label: 'FCF Per Share',
           current_metric_value: 6,
           growth_rate_default: 8,

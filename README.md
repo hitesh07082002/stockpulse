@@ -96,7 +96,7 @@ Already in place:
 - overview and financials tabs wired to canonical company detail, snapshot, and SEC facts endpoints
 - company list/detail/financials API coverage, frontend state coverage, and landing -> detail -> Financials smoke coverage
 - cache-backed price ranges with stale fallback and adjusted-close line charts
-- valuation guardrails for financial-sector disable, negative earnings / FCF warnings, missing shares-outstanding handling, and annualized CAGR comparison against the desired return input
+- valuation guardrails for financial-sector cash-flow caution, negative earnings / FCF warnings, missing shares-outstanding handling, and annualized CAGR comparison against the desired return input
 - focused screener filters with exact GICS sector names and API-driven sorting on top of `MetricSnapshot`
 - M4 API coverage, frontend unit coverage for price/valuation/screener states, and smoke coverage for price range selection and screener -> company navigation
 - secure cookie auth with `/api/auth/session/`, register/login/refresh/logout, and backend-managed Google redirect/callback
