@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -250,9 +250,10 @@ function FinancialsTab({ ticker }) {
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [periodType, setPeriodType] = useState('annual');
 
-  const { data: rawData, isLoading, isError, error } = useFinancials(ticker, {
+  const { data: financialResponse, isLoading, isError, error } = useFinancials(ticker, {
     period_type: periodType,
   });
+  const rawData = useMemo(() => financialResponse?.facts ?? [], [financialResponse]);
 
   const grouped = useMemo(() => processFinancialData(rawData), [rawData]);
 
@@ -280,7 +281,19 @@ function FinancialsTab({ ticker }) {
       <div className="flex flex-col gap-4">
         <div className="bg-surface border border-error rounded-lg p-4 text-center">
           <p className="font-body text-sm text-error">
-            {error?.message || 'Failed to load financial data. Please try again.'}
+            {error?.message || 'Financial data unavailable. Try again later.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoading && rawData.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="bg-surface border border-border rounded-lg p-8 text-center">
+          <p className="font-body text-sm text-text-secondary">
+            No financial data filed with the SEC for {ticker?.toUpperCase()}.
           </p>
         </div>
       </div>
@@ -448,7 +461,7 @@ function FinancialsTab({ ticker }) {
           ) : (
             <div className="flex items-center justify-center h-[400px] w-full mt-4">
               <span className="font-body text-sm text-text-tertiary">
-                No data available for {selectedLabel}
+                No {selectedLabel.toLowerCase()} data filed with the SEC for {ticker?.toUpperCase()}.
               </span>
             </div>
           )}

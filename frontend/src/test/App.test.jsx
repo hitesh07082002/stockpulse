@@ -33,6 +33,9 @@ describe('App routes', () => {
     expect(
       screen.getByPlaceholderText(/search by ticker or company name/i),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/normalized sec financial data for 500 s&p companies/i),
+    ).toBeInTheDocument();
   });
 
   it('renders the about page on the about route', () => {

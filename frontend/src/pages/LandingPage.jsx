@@ -2,27 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCompanySearch } from '../hooks/useStockData';
 
-/* ------------------------------------------------------------------ */
-/*  Trust cues                                                         */
-/* ------------------------------------------------------------------ */
-const RESEARCH_HIGHLIGHTS = [
-  {
-    eyebrow: 'Coverage',
-    title: '500-company research scope',
-    body: 'Search the S&P 500 universe with a company set normalized by unique SEC CIK.',
-  },
-  {
-    eyebrow: 'Data',
-    title: 'Canonical SEC financials',
-    body: 'Annual and quarterly history is selected, derived, and audited from SEC filings before it reaches the UI.',
-  },
-  {
-    eyebrow: 'Workflow',
-    title: 'One dataset across every surface',
-    body: 'Financials, valuation, screener, and AI all read from the same structured StockPulse data model.',
-  },
-];
-
 const QUICK_TICKERS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'JPM'];
 
 /* ------------------------------------------------------------------ */
@@ -34,7 +13,6 @@ function SearchBar() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
-  const inputRef = useRef(null);
 
   // Debounce the search query (300ms)
   useEffect(() => {
@@ -69,10 +47,11 @@ function SearchBar() {
 
   const handleQuickClick = useCallback(
     (ticker) => {
-      setQuery(ticker);
-      inputRef.current?.focus();
+      setQuery('');
+      setIsOpen(false);
+      navigate(`/stock/${ticker}`);
     },
-    [],
+    [navigate],
   );
 
   const showDropdown = isOpen && debouncedQuery.length >= 1;
@@ -103,7 +82,6 @@ function SearchBar() {
           </span>
 
           <input
-            ref={inputRef}
             className="w-full bg-elevated border border-border rounded-lg pl-12 pr-4 py-3 text-lg text-text-primary font-body placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-muted transition-colors"
             type="text"
             placeholder="Search by ticker or company name..."
@@ -128,29 +106,33 @@ function SearchBar() {
 
             {!isLoading && results.length === 0 && (
               <div className="px-4 py-3 text-center text-text-tertiary text-sm">
-                No results for &ldquo;{debouncedQuery}&rdquo;
+                No companies match
               </div>
             )}
 
             {!isLoading &&
               results.map((company) => (
-                <div
+                <button
                   key={company.ticker}
-                  className="px-4 py-3 hover:bg-elevated cursor-pointer flex items-center gap-3 text-text-primary transition-colors"
-                  role="button"
-                  tabIndex={0}
+                  type="button"
+                  className="w-full px-4 py-3 hover:bg-elevated cursor-pointer flex items-center gap-3 text-text-primary transition-colors text-left"
+                  aria-label={`${company.ticker} ${company.name}`}
                   onClick={() => handleSelect(company.ticker)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSelect(company.ticker);
-                  }}
                 >
                   <span className="font-data font-bold text-accent text-sm min-w-[60px]">
                     {company.ticker}
                   </span>
-                  <span className="font-body text-sm text-text-secondary truncate">
-                    {company.name}
+                  <span className="min-w-0">
+                    <span className="block font-body text-sm text-text-secondary truncate">
+                      {company.name}
+                    </span>
+                    {company.sector && (
+                      <span className="block font-body text-xs text-text-tertiary truncate">
+                        {company.sector}
+                      </span>
+                    )}
                   </span>
-                </div>
+                </button>
               ))}
           </div>
         )}
@@ -172,26 +154,24 @@ function SearchBar() {
           </span>
         ))}
       </div>
-    </section>
-  );
-}
 
-/* ------------------------------------------------------------------ */
-/*  TrustCard Component                                                */
-/* ------------------------------------------------------------------ */
-function TrustCard({ eyebrow, title, body }) {
-  return (
-    <div className="bg-surface border border-border rounded-lg p-4">
-      <div className="font-body text-[10px] font-medium uppercase tracking-[0.18em] text-text-tertiary mb-3">
-        {eyebrow}
+      <div className="mt-6 font-body text-sm text-text-secondary">
+        Normalized SEC financial data for 500 S&amp;P companies.
+        <Link
+          to="/screener"
+          className="ml-2 text-accent hover:text-accent-hover transition-colors"
+        >
+          Open screener
+        </Link>
+        <span className="mx-2 text-text-tertiary">/</span>
+        <Link
+          to="/about"
+          className="text-accent hover:text-accent-hover transition-colors"
+        >
+          Methodology
+        </Link>
       </div>
-      <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
-        {title}
-      </h3>
-      <p className="font-body text-sm leading-relaxed text-text-secondary">
-        {body}
-      </p>
-    </div>
+    </section>
   );
 }
 
@@ -200,21 +180,8 @@ function TrustCard({ eyebrow, title, body }) {
 /* ------------------------------------------------------------------ */
 export default function LandingPage() {
   return (
-    <main>
+    <main className="min-h-[calc(100vh-56px-80px)]">
       <SearchBar />
-
-      <section className="max-w-[1280px] mx-auto py-8 px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-          {RESEARCH_HIGHLIGHTS.map((item) => (
-            <TrustCard
-              key={item.title}
-              eyebrow={item.eyebrow}
-              title={item.title}
-              body={item.body}
-            />
-          ))}
-        </div>
-      </section>
     </main>
   );
 }

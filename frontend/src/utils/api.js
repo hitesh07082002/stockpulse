@@ -37,7 +37,21 @@ async function get(path, params) {
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    let messageText = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload?.message) {
+        messageText = errorPayload.message;
+      } else if (errorPayload?.error) {
+        messageText = errorPayload.error;
+      } else if (errorPayload?.detail) {
+        messageText = errorPayload.detail;
+      }
+    } catch {
+      // Fall back to the generic HTTP error above.
+    }
+
+    throw new Error(messageText);
   }
 
   return response.json();
