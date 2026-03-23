@@ -399,6 +399,20 @@ The AI copilot only sees structured StockPulse data.
 - 6.3.7 DONE Each copilot request reserves budget before model invocation and reconciles actual spend after completion. Budget reservation must be atomic — use a single `UPDATE ... WHERE reserved_cost_usd + new_cost <= cap` query or `SELECT FOR UPDATE` to prevent concurrent requests from exceeding the daily cap.
 - 6.3.8 DONE If the hard daily budget cap is already exhausted, the request is denied before any model call is attempted
 - 6.3.9 DONE Daily quota and budget accounting use the `America/New_York` calendar day, not the requester's local timezone
+- 6.3.10 DONE M6 uses a tiny provider seam: one orchestration path with provider-specific adapters at the edge, not provider logic scattered through views or prompts
+- 6.3.11 DONE Anthropic is the production-default provider for V1. Gemini may be wired through the same adapter seam for local/dev/staging so low-cost or free development remains possible without changing the core architecture.
+- 6.3.12 DONE The context assembler produces structured company data first and only renders provider-specific prompt/input text at the edge
+- 6.3.13 DONE The structured AI context is limited to company metadata, quote freshness, current `MetricSnapshot`, 10 annual periods, 8 recent quarters, and explicit sparse-data / coverage signals. It does not dump raw SEC payloads or filing text into prompts.
+- 6.3.14 DONE V1 streaming stays on SSE over standard Django streaming responses. No WebSocket-specific AI transport is introduced in M6.
+- 6.3.15 DONE The canonical client-facing stream schema is provider-agnostic and limited to `meta`, `text`, `error`, and `done` events. Provider-native token or delta events are translated at the adapter boundary.
+- 6.3.16 DONE SSE frames are emitted as JSON `data:` records with a `type` field (`meta`, `text`, `error`, `done`) so the frontend can use `fetch` streaming without provider-specific parsing rules.
+- 6.3.17 DONE The structured context payload is organized into stable sections: `identity`, `freshness`, `snapshot`, `annual_series`, `quarterly_series`, and `coverage`, so groundedness tests can assert the exact inputs independent of provider prompt wording.
+- 6.3.18 DONE `meta` carries request-level context only: ticker, company name, quote freshness, coverage/sparsity summary, and remaining daily quota when available. `text` carries incremental assistant text, `error` carries a safe user-facing code/message, and `done` closes the stream.
+- 6.3.19 DONE V1 copilot supports bounded ephemeral follow-up context: the current message plus up to the 6 most recent prior turns from the active browser session. No server-side conversation persistence or saved chats are added.
+- 6.3.20 DONE Provider selection is environment-configured and stable for the lifetime of a request. V1 does not auto-fail over between Anthropic and Gemini mid-request.
+- 6.3.21 DONE The AI request path stays performance-bounded: one company/snapshot load plus bounded annual and quarterly fact queries. Prompt/context assembly must not grow with full filing history or arbitrary metric dumps.
+- 6.3.22 DONE Failure handling is explicit: invalid input, quota exhaustion, budget exhaustion, provider unavailable, timeout, and interrupted stream all map to honest user-facing errors. If text has already streamed, the partial answer may remain visible, but the stream must still terminate with a final `error` or `done` frame.
+- 6.3.23 DONE User prompts are untrusted input. The assistant may reason only over the structured StockPulse context for the requested ticker and must not imply access to raw filing text, hidden data, or future prices.
 
 ### 6.4 Authentication Architecture
 
@@ -414,8 +428,8 @@ Authentication is part of V1, but it stays narrow and boring.
 - 6.4.5 DONE Authentication exists to support higher AI limits and future user-owned features without gating browsing
 - 6.4.6 DONE The refresh endpoint reads the refresh cookie server-side; the frontend never stores or posts a refresh token body
 - 6.4.7 DONE `GET /api/auth/session/` exposes whether a refresh cookie is present so the frontend only attempts silent refresh when a real refresh session exists
-- 6.4.7 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
-- 6.4.8 DONE Account linking policy: if a Google sign-in email matches an existing email/password account, the social account is auto-linked to the existing user via `django-allauth` email authentication. No duplicate accounts are created for the same verified email.
+- 6.4.8 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
+- 6.4.9 DONE Account linking policy: if a Google sign-in email matches an existing email/password account, the social account is auto-linked to the existing user via `django-allauth` email authentication. No duplicate accounts are created for the same verified email.
 
 ---
 
@@ -490,15 +504,16 @@ The rewrite should happen in vertical slices, not repo cleanup tasks.
 
 **Status:** DONE
 
-The current implementation on `main` is not the foundation of the rewrite, but it is still useful reference material. The migration strategy should preserve that value without trapping the project in a dual-app cleanup phase.
+The current implementation on `main` is not the foundation of the rewrite. It may be consulted as reference material, but `rewrite/v1` is free to replace endpoints, abstractions, and UI flows without preserving backward compatibility with unreleased `main` behavior.
 
 **Dimensions:**
 - 8.0.1.1 DONE Preserve the current implementation in Git history and, before invasive replacement work begins, anchor it with a dedicated legacy branch or tag such as `legacy/pre-rewrite` or `pre-rewrite-main`.
 - 8.0.1.2 DONE The rewrite happens in the active repository, ideally on a dedicated rewrite branch or worktree, and later becomes the new `main` via merge rather than by changing the default branch early.
-- 8.0.1.3 DONE Do not keep a long-lived parallel `legacy/` app or duplicate frontend/backend tree on `main`; that would create drift, agent confusion, and extra maintenance cost.
-- 8.0.1.4 DONE Existing code may be consulted for ideas, mappings, fixtures, and operational lessons, but old component boundaries, endpoints, and abstractions are not treated as architecture constraints.
-- 8.0.1.5 DONE Replace the product milestone by milestone; once a new slice is real and verified, remove or supersede the old slice instead of maintaining both implementations in parallel.
-- 8.0.1.6 DONE Reuse is selective and explicit: keep only what still earns its place, such as data mappings, representative fixtures, or source lists, and rebuild the rest against the new contracts in this plan.
+- 8.0.1.3 DONE Because this is a full rewrite of an unreleased product, no milestone should add backward-compatibility shims solely to mirror `main`. Prefer the clean V1 contract.
+- 8.0.1.4 DONE Do not keep a long-lived parallel `legacy/` app or duplicate frontend/backend tree on `main`; that would create drift, agent confusion, and extra maintenance cost.
+- 8.0.1.5 DONE Existing code may be consulted for ideas, mappings, fixtures, and operational lessons, but old component boundaries, endpoints, and abstractions are not treated as architecture constraints.
+- 8.0.1.6 DONE Replace the product milestone by milestone; once a new slice is real and verified, remove or supersede the old slice instead of maintaining both implementations in parallel.
+- 8.0.1.7 DONE Reuse is selective and explicit: keep only what still earns its place, such as data mappings, representative fixtures, or source lists, and rebuild the rest against the new contracts in this plan.
 
 ### 8.1 M1 — Foundation
 
@@ -589,11 +604,15 @@ Implementation order:
 **Status:** PENDING
 
 **Dimensions:**
-- 8.6.1 PENDING Build context assembler from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
-- 8.6.2 PENDING Add signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, and daily spend enforcement via `AIBudgetDay`
-- 8.6.3 PENDING Add SSE streaming UI and error states
-- 8.6.4 PENDING Add prompt and response tests for groundedness and sparse-data honesty
-- 8.6.5 PENDING Required tests: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
+- 8.6.1 PENDING M6 is implemented in two internal workstreams: `M6A core copilot pipeline` and `M6B quota/budget/upgrade UX`
+- 8.6.2 PENDING `M6A` builds one thin API/view layer, one copilot orchestration service, one provider adapter seam, and a structured context assembler sourced from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
+- 8.6.3 PENDING `M6A` includes the real backend enforcement path from day one: signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, burst backstop, atomic daily budget reserve/reconcile via `AIBudgetDay`, and honest SSE / error responses
+- 8.6.4 PENDING `M6A` ships SSE streaming with a small canonical event schema (`text`, `error`, `done`, and optional metadata), keeping provider-specific event differences out of the frontend
+- 8.6.5 PENDING `M6B` focuses on frontend upgrade UX, anonymous quota exhaustion -> sign-in continuation, richer empty/error/budget states, and any non-critical AI polish
+- 8.6.6 PENDING `M6A` carries bounded follow-up history from the active client session without adding saved conversations or server-side chat persistence
+- 8.6.7 PENDING `M6A` enforces config-driven provider selection, bounded query/prompt assembly, and explicit timeout / interrupted-stream handling
+- 8.6.8 PENDING Add prompt and response tests for groundedness and sparse-data honesty
+- 8.6.9 PENDING Required tests: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
 
 ### 8.7 M7 — Hardening and Deploy
 
@@ -644,10 +663,12 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.5 M6 Gates (AI Copilot)
 
-- 9.5.1 PENDING Quota enforcement tests: anonymous quota, authenticated quota, burst limit, budget exhaustion
-- 9.5.2 PENDING Context assembly tests: correct data included, sparse-data honesty
-- 9.5.3 PENDING Playwright smoke: AI tab prompt submit with SSE streaming
-- 9.5.4 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
+- 9.5.1 PENDING Quota and budget enforcement tests pass: anonymous quota, authenticated quota, burst limit, hard budget exhaustion, and atomic reserve/reconcile under concurrent requests
+- 9.5.2 PENDING Context assembly tests pass: stable `identity` / `freshness` / `snapshot` / `annual_series` / `quarterly_series` / `coverage` sections, bounded annual+quarterly windows, bounded recent-turn history, and sparse-data honesty
+- 9.5.3 PENDING Provider adapter tests pass: Anthropic and Gemini responses normalize into the canonical `meta` / `text` / `error` / `done` stream contract without leaking provider-native event shapes to the frontend
+- 9.5.4 PENDING Failure-mode tests pass: invalid JSON, empty prompt, oversized prompt, unknown ticker, provider unavailable, provider timeout, and interrupted stream semantics
+- 9.5.5 PENDING Playwright smoke: AI tab prompt submit with streaming response and visible quota state
+- 9.5.6 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
 
 ### 9.6 M7 Gates (Hardening + Deploy)
 
@@ -665,7 +686,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 - [ ] 10.2 Core financial metrics render from canonical normalized SEC data
 - [ ] 10.3 Quote and price chart data use shared cached sources and expose freshness clearly
 - [ ] 10.4 Screener performance is driven by `MetricSnapshot`, not heavy request-time joins
-- [ ] 10.5 AI copilot answers per-company questions using structured StockPulse data and admits uncertainty when coverage is thin
+- [ ] 10.5 AI copilot answers per-company questions and bounded follow-up turns using structured StockPulse data only, and admits uncertainty when coverage is thin
 - [ ] 10.6 Users can register, log in, refresh auth state, and sign in with Google using secure cookie-based auth
 - [ ] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
 - [ ] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
@@ -712,7 +733,7 @@ For 10.10, derived metrics in the launch-critical set count as covered only when
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
 | Adversarial | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 6 issues, 0 critical gaps |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | CLEAR | initial architecture fixes + M6 copilot contract locked |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL) | score: 7/10 → 9/10, 6 decisions |
 
 - **CODEX (plan review):** 5 P0 + 4 P1 + 1 P2 findings. Key issues addressed: verification gate structure, quote dependency contradiction, AI budget race condition, valuation guardrails, auth account linking.
