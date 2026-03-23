@@ -90,6 +90,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+SPA_BUILD_DIR = Path(os.getenv('SPA_BUILD_DIR', BASE_DIR.parent / 'frontend' / 'dist'))
+if SPA_BUILD_DIR.exists():
+    STATICFILES_DIRS = [('spa', str(SPA_BUILD_DIR))]
+    WHITENOISE_ROOT = str(SPA_BUILD_DIR)
 if not DEBUG:
     STORAGES = {
         'staticfiles': {
