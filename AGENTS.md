@@ -96,4 +96,12 @@ Before considering major work done, aim to pass the repo gates defined in [`plan
 - `make lint`
 - `make test`
 - `make build`
-- Playwright smoke coverage for landing, search, stock detail, auth, and AI-critical flows
+- Browser QA via gstack `/qa` for interactive flows; keep `make qa-smoke` as the repo gate
+
+## Codex Agent Notes
+
+**Do not use Playwright MCP for interactive browser work in this repo.** Browser QA from Codex should use gstack's `/qa` and `/browse` path with the browse binary. If your global config has Playwright MCP enabled, ignore it here.
+
+For browser-based QA from Codex, use gstack skills in `.agents/skills/` (e.g., `gstack-qa`, `gstack-browse`). The browse binary is at `~/.codex/skills/gstack/browse/dist/browse`. Keep Playwright CLI and `make qa-smoke` for deterministic regression coverage and repo verification.
+
+**Bug fix workflow:** Read `.gstack/qa-reports/` for the latest QA findings. Fix in severity order. One commit per fix: `fix(qa): ISSUE-NNN — short description`.
