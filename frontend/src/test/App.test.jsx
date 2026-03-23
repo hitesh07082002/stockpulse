@@ -2,8 +2,29 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+
+const ANONYMOUS_SESSION = {
+  is_authenticated: false,
+  user: null,
+  limits: {
+    anonymous_daily: 10,
+    authenticated_daily: 50,
+    current_daily: 10,
+  },
+  google_signin_available: true,
+};
+
+function jsonResponse(payload, init = {}) {
+  return new Response(JSON.stringify(payload), {
+    status: init.status || 200,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  });
+}
 
 function renderApp(initialEntry = '/') {
   const queryClient = new QueryClient({
@@ -24,6 +45,26 @@ function renderApp(initialEntry = '/') {
 }
 
 describe('App routes', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn((input) => {
+      const url = typeof input === 'string' ? input : input.toString();
+
+      if (url.includes('/auth/session/')) {
+        return Promise.resolve(jsonResponse(ANONYMOUS_SESSION));
+      }
+
+      if (url.includes('/auth/refresh/')) {
+        return Promise.resolve(jsonResponse({ error: 'No refresh session available.' }, { status: 401 }));
+      }
+
+      throw new Error(`Unhandled fetch in App.test: ${url}`);
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('renders the search-first landing page on the root route', () => {
     renderApp('/');
 

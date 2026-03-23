@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { sendChatMessage } from '../../utils/api';
+import { useAuth } from '../auth/useAuth';
 
 /* ────────────────────────────────────────────
    Suggested Prompts
@@ -13,14 +14,16 @@ const SUGGESTED_PROMPTS = [
   'Compare margins to sector average',
 ];
 
-const ANONYMOUS_DAILY_LIMIT = 10;
-const AUTHENTICATED_DAILY_LIMIT = 50;
-
 /* ────────────────────────────────────────────
    AITab Component
    ──────────────────────────────────────────── */
 
 function AITab({ ticker, company }) {
+  const {
+    isAuthenticated,
+    limits,
+    openAuthModal,
+  } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -97,6 +100,10 @@ function AITab({ ticker, company }) {
   const hasMessages = messages.length > 0;
   const canSend = input.trim().length > 0 && !isStreaming;
   const companyName = (company && company.name) || ticker;
+  const anonymousLimit = limits?.anonymous_daily || 10;
+  const authenticatedLimit = limits?.authenticated_daily || 50;
+  const currentLimit = isAuthenticated ? authenticatedLimit : anonymousLimit;
+  const shouldShowUpgradePrompt = !isAuthenticated && /limit/i.test(error);
 
   return (
     <div className="flex flex-col h-[600px] bg-surface border border-border rounded-lg overflow-hidden">
@@ -106,7 +113,9 @@ function AITab({ ticker, company }) {
           Ask about {companyName}'s financials
         </span>
         <span className="text-xs font-data text-text-tertiary bg-elevated px-2 py-1 rounded-full">
-          Free: {ANONYMOUS_DAILY_LIMIT}/day · Sign in: {AUTHENTICATED_DAILY_LIMIT}/day
+          {isAuthenticated
+            ? `Signed in: ${currentLimit}/day`
+            : `Free: ${anonymousLimit}/day · Sign in: ${authenticatedLimit}/day`}
         </span>
       </div>
 
@@ -127,6 +136,15 @@ function AITab({ ticker, company }) {
               </button>
             ))}
           </div>
+          {!isAuthenticated && (
+            <button
+              type="button"
+              onClick={() => openAuthModal('login')}
+              className="rounded-full border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
+            >
+              Sign in for {authenticatedLimit} daily prompts
+            </button>
+          )}
         </div>
       )}
 
@@ -177,7 +195,18 @@ function AITab({ ticker, company }) {
                 ? 'bg-[#F59E0B]/10 text-[#F59E0B] rounded-lg p-4 text-center text-sm'
                 : 'bg-error/10 text-error rounded-lg p-3 text-sm'
             }>
-              {error}
+              <div className="space-y-3">
+                <div>{error}</div>
+                {shouldShowUpgradePrompt && (
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal('login')}
+                    className="rounded-full border border-[rgba(245,158,11,0.35)] px-4 py-2 text-sm font-medium text-[#FBBF24] transition-colors hover:border-[#FBBF24] hover:text-[#FDE68A]"
+                  >
+                    Sign in for {authenticatedLimit} daily prompts
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

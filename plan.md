@@ -429,6 +429,8 @@ POST /api/auth/register/
 POST /api/auth/login/
      { email, password }
 
+GET  /api/auth/session/
+
 GET  /api/auth/google/start/
 
 GET  /api/auth/google/callback/
@@ -573,13 +575,13 @@ Implementation order:
 
 ### 8.5 M5 — Authentication
 
-**Status:** PENDING
+**Status:** DONE
 
 **Dimensions:**
-- 8.5.1 PENDING Build auth endpoints, secure cookie flow, and auth context on the frontend
-- 8.5.2 PENDING Build a Google-first auth modal with email/password fallback
-- 8.5.3 PENDING Add auth tests for registration, login, refresh, logout, and backend-managed Google callback flow
-- 8.5.4 PENDING Required tests: API tests for register, login, refresh, logout, Google callback (new user + existing email auto-link); unit test for account auto-link by verified email; Playwright smoke for auth modal flow and Google sign-in end to end
+- 8.5.1 DONE Built auth endpoints, secure cookie flow, `/api/auth/session/`, and auth context on the frontend
+- 8.5.2 DONE Built a Google-first auth modal with email/password fallback in the global shell and AI tab
+- 8.5.3 DONE Added auth tests for registration, login, refresh, logout, and backend-managed Google callback flow
+- 8.5.4 DONE Required tests: API tests for register, login, refresh, logout, Google callback (new user + existing email auto-link); unit test for account auto-link by verified email; Playwright smoke for auth modal flow and Google sign-in end to end
 
 ### 8.6 M6 — AI Copilot
 
@@ -635,9 +637,9 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.4 M5 Gates (Authentication)
 
-- 9.4.1 PENDING Auth API tests: register, login, refresh, logout, Google callback (new user, existing email auto-link)
-- 9.4.2 PENDING Auth flow smoke: register/login/logout end to end
-- 9.4.3 PENDING Google sign-in smoke coverage passes end to end
+- 9.4.1 DONE Auth API tests: register, login, refresh, logout, Google callback (new user, existing email auto-link)
+- 9.4.2 DONE Auth flow smoke: register/login/logout end to end
+- 9.4.3 DONE Google sign-in smoke coverage passes end to end
 
 ### 9.5 M6 Gates (AI Copilot)
 

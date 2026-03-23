@@ -81,7 +81,7 @@ Do not jump ahead to AI polish or peripheral product features before the Financi
 
 ## Milestone Progress
 
-M1, M2, M3, and M4 are complete and verified.
+M1, M2, M3, M4, and M5 are complete and verified.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
@@ -99,16 +99,18 @@ Already in place:
 - valuation guardrails for financial-sector disable, negative earnings / FCF warnings, missing shares-outstanding handling, and annualized CAGR comparison against the desired return input
 - focused screener filters with exact GICS sector names and API-driven sorting on top of `MetricSnapshot`
 - M4 API coverage, frontend unit coverage for price/valuation/screener states, and smoke coverage for price range selection and screener -> company navigation
+- secure cookie auth with `/api/auth/session/`, register/login/refresh/logout, and backend-managed Google redirect/callback
+- Google-first auth modal in the shell, with email/password fallback and visible logged-in state in the header + AI tab
+- M5 API coverage for register/login/refresh/logout and Google auto-linking, plus smoke coverage for register/login/logout and Google sign-in
 
 Latest verification pass:
 - `make lint`
 - `make test`
-- `make coverage`
 - `make build`
 - `make qa-smoke`
 
 Next up:
-- M5 authentication is next
+- M6 AI copilot is next
 
 Current data layer status:
 - M2 ingestion and canonical data is complete
@@ -131,6 +133,11 @@ Local development now assumes:
 - the browser entrypoint is `localhost:5173`
 - the frontend calls relative `/api` by default
 - Vite proxies `/api` to Django on `localhost:8000`
+- local auth bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie for state-changing auth requests
+
+Google sign-in in local dev:
+- with real Google OAuth credentials configured, the backend-managed redirect/callback flow is used
+- without Google credentials in `DEBUG`, `/api/auth/google/start/` falls back to a debug-only mock consent page so local smoke and manual auth testing stay deterministic
 
 If you need a different backend origin for local work, set `VITE_API_BASE_URL`.
 

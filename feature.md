@@ -189,7 +189,9 @@ Includes:
 - Google sign-in as the primary auth path through a backend-managed redirect/callback flow
 - email/password fallback
 - secure cookie-based auth
+- frontend auth context bootstrapped through `/api/auth/session/`
 - login/register modal or drawer
+- shell-level sign-in entry points in the global header and AI tab
 
 Does not include:
 - gating public research pages

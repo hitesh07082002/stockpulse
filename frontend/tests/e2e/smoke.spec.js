@@ -73,3 +73,51 @@ test('invalid ticker renders the search-facing not-found state', async ({ page }
   await expect(page.getByText(/company not found for ticker/i)).toBeVisible();
   await expect(page.getByRole('link', { name: /back to search/i })).toBeVisible();
 });
+
+test('auth modal supports register, login, and logout', async ({ page }) => {
+  const email = `oracle+${Date.now()}@example.com`;
+  const password = 'StockPulse123!';
+
+  await page.goto('/');
+
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+
+  await page.getByRole('button', { name: /create account/i }).click();
+  await page.getByRole('button', { name: /use email instead/i }).click();
+  await page.getByLabel('Name').fill('Oracle User');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.locator('form').getByRole('button', { name: /^create account$/i }).click();
+
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
+  await expect(page.getByText(/oracle user/i)).toBeVisible();
+
+  await page.getByRole('button', { name: /sign out/i }).click();
+  await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible();
+
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  await page.getByRole('button', { name: /use email instead/i }).click();
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: /sign in with email/i }).click();
+
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
+  await expect(page.getByText(/50 ai prompts\/day/i)).toBeVisible();
+});
+
+test('google sign-in completes through the local mock consent flow', async ({ page }) => {
+  await page.goto('/');
+
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  await page.getByRole('button', { name: /continue with google/i }).click();
+
+  await expect(page).toHaveURL(/\/api\/auth\/google\/mock-consent/);
+  await expect(page.getByRole('heading', { name: /continue with google/i })).toBeVisible();
+
+  await page.getByRole('button', { name: /continue as/i }).click();
+
+  await expect(page).toHaveURL(/localhost:5173/);
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
+  await expect(page.getByText(/demo user/i)).toBeVisible();
+});
