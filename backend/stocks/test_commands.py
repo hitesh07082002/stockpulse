@@ -11,7 +11,7 @@ from django.core.management import call_command
 from stocks.management.commands import enrich_company_metadata as enrich_company_metadata_command
 from stocks.management.commands import ingest_financials as ingest_financials_command
 from stocks.management.commands import update_prices as update_prices_command
-from stocks.models import Company, FinancialFact, IngestionRun, RawSecPayload
+from stocks.models import Company, FinancialFact, IngestionRun, MetricSnapshot, PriceCache, RawSecPayload
 
 
 SEED_25_CSV = (
@@ -107,6 +107,47 @@ def test_ingest_companies_updates_existing_company_when_cik_matches_new_ticker(t
     assert Company.objects.count() == 1
     assert Company.objects.filter(ticker="FOXA", cik="1754301").exists()
     assert not Company.objects.filter(ticker="FOX").exists()
+
+
+@pytest.mark.django_db
+def test_seed_smoke_data_creates_deterministic_aapl_dataset():
+    call_command("seed_smoke_data")
+
+    company = Company.objects.get(ticker="AAPL")
+    assert company.name == "Apple Inc."
+    assert company.sector == "Information Technology"
+    assert company.current_price == Decimal("195.25")
+
+    snapshot = MetricSnapshot.objects.get(company=company)
+    assert snapshot.pe_ratio == Decimal("28.90")
+    assert snapshot.revenue_growth_yoy == Decimal("0.0200")
+
+    assert FinancialFact.objects.filter(company=company, period_type="annual").count() >= 17
+    assert FinancialFact.objects.filter(
+        company=company,
+        metric_key="diluted_eps",
+        period_type="annual",
+        fiscal_year=2024,
+    ).exists()
+
+    one_year_cache = PriceCache.objects.get(company=company, range_key="1Y")
+    five_year_cache = PriceCache.objects.get(company=company, range_key="5Y")
+    assert one_year_cache.sampling_granularity == "trading-day"
+    assert five_year_cache.sampling_granularity == "weekly"
+    assert len(one_year_cache.data_json) >= 5
+    assert len(five_year_cache.data_json) >= 5
+
+
+@pytest.mark.django_db
+def test_seed_smoke_data_is_idempotent_for_company_snapshot_and_price_cache():
+    call_command("seed_smoke_data")
+    call_command("seed_smoke_data")
+
+    company = Company.objects.get(ticker="AAPL")
+    assert Company.objects.filter(ticker="AAPL").count() == 1
+    assert MetricSnapshot.objects.filter(company=company).count() == 1
+    assert PriceCache.objects.filter(company=company, range_key="1Y").count() == 1
+    assert PriceCache.objects.filter(company=company, range_key="5Y").count() == 1
 
 
 @pytest.mark.django_db

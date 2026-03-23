@@ -121,6 +121,8 @@ Latest verification pass:
 - `make build`
 - `make qa-smoke`
 
+CI smoke now seeds a tiny deterministic `AAPL` dataset with `python backend/manage.py seed_smoke_data` before the browser suite starts, so the landing, stock detail, price, DCF, AI, and screener checks do not depend on a full ingestion run.
+
 Next up:
 - M7 hardening and deploy
 
