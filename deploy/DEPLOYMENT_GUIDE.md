@@ -280,6 +280,10 @@ git push origin main
 
 GitHub Actions will: build image → push to GHCR → SSH deploy → migrate → health check.
 
+Important note:
+- the deploy health check hits Gunicorn on `127.0.0.1:8000`, but it must send the production `Host` header plus `X-Forwarded-Proto: https`
+- without those headers Django will reject the request (`ALLOWED_HOSTS`) or redirect it (`SECURE_SSL_REDIRECT`), even when the app is actually healthy
+
 ---
 
 ## Phase 7: Verify Everything Works (5 min)

@@ -135,7 +135,7 @@ Current V1 environment chain:
 2. merge or push to `main`
 3. GitHub Actions builds and pushes the production image to GHCR
 4. the deploy workflow SSHes to the server, runs `docker compose pull`, `docker compose up -d --remove-orphans`, then runs `python manage.py migrate --noinput`
-5. the workflow verifies `http://127.0.0.1:8000/api/health/`
+5. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
 
 There is no separate staging environment in the current V1 deployment contract.
 

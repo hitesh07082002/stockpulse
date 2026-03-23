@@ -45,4 +45,7 @@ jobs:
             docker compose up -d --remove-orphans
             docker exec stockpulse-web python manage.py migrate --noinput
             sleep 5
-            curl -sf http://127.0.0.1:8000/api/health/ || exit 1
+            curl -sf \
+              -H "Host: stockpulse.hiteshsadhwani.xyz" \
+              -H "X-Forwarded-Proto: https" \
+              http://127.0.0.1:8000/api/health/ || exit 1
