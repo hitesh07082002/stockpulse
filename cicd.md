@@ -70,6 +70,7 @@ Playwright smoke should run against a real local stack in CI:
 - PostgreSQL service container
 - backend app
 - frontend app
+- a deterministic `python manage.py seed_smoke_data` step before the servers boot, so smoke does not depend on live ingestion or network price refreshes
 
 Critical smoke path:
 - landing loads

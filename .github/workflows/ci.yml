@@ -183,6 +183,7 @@ jobs:
         if: ${{ hashFiles('frontend/playwright.config.*') != '' }}
         run: |
           python backend/manage.py migrate
+          python backend/manage.py seed_smoke_data
           nohup python backend/manage.py runserver 127.0.0.1:8000 > /tmp/stockpulse-backend.log 2>&1 &
 
       - name: Start frontend
