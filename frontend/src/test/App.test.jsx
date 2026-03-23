@@ -38,12 +38,12 @@ describe('App routes', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the about page on the about route', () => {
+  it('renders the about page on the about route', async () => {
     renderApp('/about');
 
     expect(
-      screen.getByRole('heading', { name: /about stockpulse/i }),
+      await screen.findByRole('heading', { name: /about stockpulse/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/data sources/i)).toBeInTheDocument();
+    expect(await screen.findByText(/data sources/i)).toBeInTheDocument();
   });
 });
