@@ -11,7 +11,7 @@ StockPulse V1 is a public-first stock research application. The system is optimi
 1. ingest and normalize SEC financial data
 2. cache price context and derived metrics
 3. serve a fast stock detail experience
-4. layer grounded AI explanation on top of the same structured data
+4. layer AI explanation on top of the same structured data
 
 The architecture is intentionally boring in V1: PostgreSQL-backed truth, Django APIs, React frontend, scheduled jobs, no Celery/Redis, no vector search, no real-time streaming quotes.
 
@@ -20,7 +20,7 @@ The architecture is intentionally boring in V1: PostgreSQL-backed truth, Django 
 - PostgreSQL is the source of truth for application data and cache state.
 - SEC normalization correctness matters more than job orchestration sophistication.
 - Public browsing stays open; auth only adds quota and future user-owned features.
-- AI is a product layer over existing data, not a separate knowledge system.
+- AI is a product layer over existing data, with StockPulse facts as primary grounding and general financial knowledge used only to explain or contextualize those facts.
 - Prefer deterministic batch jobs and read models over expensive request-time computation.
 
 ## High-Level System
@@ -165,7 +165,7 @@ Rules:
 
 ### 5. AI Copilot
 
-The AI layer interprets structured StockPulse data only.
+The AI layer starts from structured StockPulse data and may add general financial knowledge when it helps explain what the numbers mean.
 
 ```text
 user prompt
@@ -173,13 +173,11 @@ user prompt
    ├─ check signed anon cookie or authenticated user
    ├─ enforce daily quota
    ├─ enforce burst limit
-   ├─ reserve daily AI budget
    ├─ assemble company context
    ├─ render provider-specific prompt/input at the edge
    ▼
 provider adapter call (streaming)
    │
-   ├─ reconcile actual spend
    └─ stream answer to UI
 ```
 
@@ -192,7 +190,7 @@ Context inputs:
 - explicit coverage/sparsity signals
 
 Provider contract:
-- Anthropic is the production-default provider
+- Anthropic Haiku 4.5 is the production-default model, with `ANTHROPIC_MODEL` available for overrides such as Sonnet
 - Gemini can be used in local/dev/staging through the same adapter seam
 - Gemini copilot requests default to a zero thinking budget on this grounded V1 path so hidden reasoning does not consume the visible answer budget
 - the frontend only sees canonical SSE JSON frames: `meta`, `text`, `error`, `done`
@@ -208,12 +206,11 @@ What it does not use:
 - vector search
 - cross-company document retrieval
 
-Budget rule:
-- a hard daily AI budget is configured by env var
-- daily usage and budget windows reset on the `America/New_York` calendar day
-- each request reserves budget before the model call
-- actual cost is reconciled after completion
-- once the daily cap is exhausted, new requests are rejected until the next day
+Grounding and cost rules:
+- StockPulse structured data is the primary company-specific grounding source
+- the model may use general financial knowledge to explain why metrics changed or what a ratio generally implies
+- answers should distinguish StockPulse data from general context when both are used
+- cost safety is operational, not database-enforced: load limited credits on the provider API key and rely on in-app quota plus burst limits
 
 ## Data Model
 
@@ -226,7 +223,6 @@ Budget rule:
 - `IngestionRun`
 - `RawSecPayload`
 - `AIUsageCounter`
-- `AIBudgetDay`
 
 Retention rule:
 - keep the latest successful payload per `company + source`
@@ -242,7 +238,6 @@ Company 1 ────────< IngestionRun (optional company FK)
 Company 1 ────────< RawSecPayload
 
 User 1 ───────────< AIUsageCounter (optional, anonymous rows have null user)
-AIBudgetDay is daily global spend state
 ```
 
 ## Deployment Shape
@@ -288,9 +283,9 @@ Celery/Redis becomes justified only if:
 - `PriceCache.stale` becomes the visible signal
 - stale data is shown instead of an empty price experience
 
-### AI budget exhausted
-- model invocation is blocked before spend increases
-- UI gets a clear budget/error state instead of a hanging stream
+### AI quota or provider failure
+- quota exhaustion returns a clear upgrade-or-try-tomorrow response
+- provider timeout or availability failures return a clear stream error instead of a hanging UI
 
 ### Auth refresh fails
 - the user drops to logged-out state
