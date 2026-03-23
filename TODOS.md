@@ -14,10 +14,10 @@
 **Depends on:** CI staying green on the current rewrite branch.
 **Status:** Not started
 
-### SEC Fair-Access Compliance
-**What:** Ensure `ingest_financials` and `ingest_companies` respect the SEC EDGAR 10 requests/second fair-access policy with appropriate throttling and a compliant `User-Agent` header.
-**Why:** Unthrottled requests to SEC EDGAR for 500 companies can trigger IP blocks. The SEC publishes fair-access guidelines that require a descriptive User-Agent and rate limiting. Compliance is both practical (avoid blocks) and professional (demonstrates awareness of external API contracts).
-**Depends on:** Nothing — can be verified against existing M2 pipeline code.
+### SEC Fair-Access Verification
+**What:** Add explicit regression coverage and an operator note for the existing SEC EDGAR fair-access contract in `ingest_financials`: descriptive `User-Agent`, `0.1s` request interval, and 429 backoff handling.
+**Why:** The core behavior is already implemented, but it is only partially proven in tests today, and the current TODO incorrectly implies `ingest_companies` talks to SEC when it actually reads the local S&P universe CSV.
+**Depends on:** Existing `ingest_financials` command behavior in [`backend/stocks/management/commands/ingest_financials.py`](./backend/stocks/management/commands/ingest_financials.py).
 **Status:** Not started
 
 ### Metadata Override Curation
