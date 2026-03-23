@@ -150,7 +150,6 @@ class GeminiProvider(BaseProvider):
             "contents": _gemini_contents(conversation),
             "generationConfig": {
                 "maxOutputTokens": self.max_output_tokens,
-                "temperature": 0.2,
                 "thinkingConfig": {
                     "thinkingBudget": settings.GEMINI_THINKING_BUDGET,
                 },
