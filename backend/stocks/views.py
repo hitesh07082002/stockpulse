@@ -12,11 +12,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from .models import Company, FinancialFact, MetricSnapshot
+from .pricing import PriceCacheUnavailable, get_or_refresh_price_cache
 from .serializers import (
     CompanyListSerializer, CompanyDetailSerializer,
     FinancialFactSerializer, MetricSnapshotSerializer,
 )
-from .xbrl_mapping import DCF_WARNING_SECTORS
 
 
 def _safe_number(value):
@@ -46,6 +46,24 @@ def _latest_annual_fact(company, metric_key):
         metric_key=metric_key,
         period_type='annual',
     ).order_by('-fiscal_year').first()
+
+
+def _is_financial_sector_company(company):
+    sector = (company.sector or "").strip().lower()
+    industry = (company.industry or "").strip().lower()
+
+    if sector in {"financial services", "financials"}:
+        return True
+
+    industry_keywords = (
+        "bank",
+        "insurance",
+        "exchange",
+        "capital market",
+        "brokerage",
+        "asset management",
+    )
+    return any(keyword in industry for keyword in industry_keywords)
 
 
 def _annual_growth_percentage(company, metric_key):
@@ -228,51 +246,21 @@ def prices_view(request, ticker):
     company = generics.get_object_or_404(Company, ticker=ticker)
 
     range_param = request.query_params.get('range', '1Y')
-    valid_ranges = {'1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y', '5Y': '5y', 'MAX': 'max'}
-    yf_period = valid_ranges.get(range_param, '1y')
-
     try:
-        import yfinance as yf
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period=yf_period)
-
-        if hist.empty:
-            return Response({
-                'ticker': ticker,
-                'data': [],
-                'stale': True,
-                'message': 'No price data available',
-            })
-
-        data = []
-        for idx, row in hist.iterrows():
-            adjusted_close = row.get('Adj Close', row.get('Close'))
-            data.append({
-                'date': idx.strftime('%Y-%m-%d'),
-                'open': round(float(row['Open']), 2),
-                'high': round(float(row['High']), 2),
-                'low': round(float(row['Low']), 2),
-                'close': round(float(row['Close']), 2),
-                'adjusted_close': round(float(adjusted_close), 2),
-                'volume': int(row['Volume']),
-            })
-
+        payload = get_or_refresh_price_cache(company, range_param)
+    except ValueError as exc:
         return Response({
-            'ticker': ticker,
-            'data': data,
-            'stale': False,
-            'updated_at': timezone.now().isoformat(),
-        })
-
-    except Exception:
-        # Serve stale data indicator
+            'message': str(exc),
+        }, status=400)
+    except PriceCacheUnavailable:
         return Response({
-            'ticker': ticker,
-            'data': [],
-            'stale': True,
-            'message': 'Price data temporarily unavailable',
-            'quote_updated_at': company.quote_updated_at.isoformat() if company.quote_updated_at else None,
-        })
+            'message': 'Price data unavailable. Retry.',
+        }, status=503)
+
+    if not payload['data']:
+        payload['message'] = 'No price history available'
+
+    return Response(payload)
 
 
 # --- Valuation inputs endpoint ---
@@ -298,8 +286,10 @@ def valuation_inputs_view(request, ticker):
     current_price = _safe_number(company.current_price)
     earnings_growth_rate_default = _compute_earnings_growth_default(company, snapshot)
     cash_flow_growth_rate_default = _compute_cash_flow_growth_default(company, snapshot)
+    financial_sector_disabled = _is_financial_sector_company(company)
 
     earnings_metric_value = _compute_eps_value(company, snapshot)
+    negative_earnings = earnings_metric_value is not None and earnings_metric_value < 0
     earnings_multiple = _safe_number(snapshot.pe_ratio) if snapshot else None
     if earnings_multiple in (None, 0):
         earnings_multiple = 18.0
@@ -315,25 +305,61 @@ def valuation_inputs_view(request, ticker):
         cash_flow_multiple = 15.0
 
     warnings = []
-    if company.sector in DCF_WARNING_SECTORS:
+    if financial_sector_disabled:
         warnings.append(
-            f"DCF models are less reliable for {company.sector} companies. "
-            "Consider using P/E or P/B multiples instead."
+            "Valuation is not applicable for financial sector companies in V1."
+        )
+    if negative_earnings:
+        warnings.append(
+            "Trailing earnings are negative, so earnings-based valuation needs extra caution."
         )
     if negative_cash_flow:
         warnings.append(
             "Free cash flow is currently negative, so cash-flow-based valuation should be used with caution."
         )
+    if shares_outstanding in (None, 0):
+        warnings.append(
+            "Cash Flow mode requires shares outstanding before per-share valuation can be shown."
+        )
+
+    not_applicable_reason = (
+        "Not applicable for financial sector companies."
+        if financial_sector_disabled
+        else None
+    )
+    earnings_mode_available = not financial_sector_disabled and earnings_metric_value is not None
+    cash_flow_mode_available = (
+        not financial_sector_disabled
+        and cash_flow_metric_value is not None
+        and shares_outstanding not in (None, 0)
+    )
 
     data = {
         'ticker': company.ticker,
         'name': company.name,
         'sector': company.sector,
+        'industry': company.industry,
         'current_price': company.current_price,
         'shares_outstanding': company.shares_outstanding,
         'projection_years_default': 5,
+        'not_applicable': financial_sector_disabled,
+        'not_applicable_reason': not_applicable_reason,
+        'guardrails': {
+            'financial_sector_disabled': financial_sector_disabled,
+            'negative_earnings': negative_earnings,
+            'negative_free_cash_flow': negative_cash_flow,
+            'missing_shares_outstanding': shares_outstanding in (None, 0),
+        },
         'warnings': warnings,
         'earnings_mode': {
+            'available': earnings_mode_available,
+            'availability_reason': (
+                not_applicable_reason
+                if financial_sector_disabled
+                else f"Missing trailing {('EPS')} input."
+                if earnings_metric_value is None
+                else None
+            ),
             'current_metric_label': 'EPS',
             'current_metric_value': earnings_metric_value,
             'growth_rate_default': earnings_growth_rate_default,
@@ -342,6 +368,16 @@ def valuation_inputs_view(request, ticker):
             'current_trading_multiple': _safe_number(snapshot.pe_ratio) if snapshot else None,
         },
         'cash_flow_mode': {
+            'available': cash_flow_mode_available,
+            'availability_reason': (
+                not_applicable_reason
+                if financial_sector_disabled
+                else "Missing shares outstanding for per-share cash flow valuation."
+                if shares_outstanding in (None, 0)
+                else "Missing trailing free cash flow input."
+                if cash_flow_metric_value is None
+                else None
+            ),
             'current_metric_label': 'FCF Per Share',
             'current_metric_value': cash_flow_metric_value,
             'growth_rate_default': cash_flow_growth_rate_default,
@@ -370,20 +406,22 @@ class ScreenerView(generics.ListAPIView):
         if sector:
             qs = qs.filter(company__sector__iexact=sector)
 
+        industry = params.get('industry')
+        if industry:
+            qs = qs.filter(company__industry__icontains=industry)
+
         # Range filters
         range_filters = {
             'pe_min': ('pe_ratio__gte', float),
             'pe_max': ('pe_ratio__lte', float),
-            'dividend_yield_min': ('dividend_yield__gte', float),
-            'dividend_yield_max': ('dividend_yield__lte', float),
-            'net_margin_min': ('net_margin__gte', float),
-            'net_margin_max': ('net_margin__lte', float),
-            'roe_min': ('roe__gte', float),
-            'roe_max': ('roe__lte', float),
             'market_cap_min': ('company__market_cap__gte', int),
             'market_cap_max': ('company__market_cap__lte', int),
             'revenue_growth_min': ('revenue_growth_yoy__gte', float),
             'revenue_growth_max': ('revenue_growth_yoy__lte', float),
+            'gross_margin_min': ('gross_margin__gte', float),
+            'gross_margin_max': ('gross_margin__lte', float),
+            'operating_margin_min': ('operating_margin__gte', float),
+            'operating_margin_max': ('operating_margin__lte', float),
             'debt_to_equity_min': ('debt_to_equity__gte', float),
             'debt_to_equity_max': ('debt_to_equity__lte', float),
         }
@@ -396,6 +434,10 @@ class ScreenerView(generics.ListAPIView):
                 except (ValueError, TypeError):
                     pass
 
+        positive_fcf = params.get('positive_fcf', params.get('positive_free_cash_flow'))
+        if str(positive_fcf).lower() in {'1', 'true', 'yes', 'on'}:
+            qs = qs.filter(free_cash_flow__gt=0)
+
         # Sorting
         sort_field = params.get('sort', 'market_cap')
         order = params.get('order', 'desc')
@@ -403,11 +445,12 @@ class ScreenerView(generics.ListAPIView):
             'market_cap': 'company__market_cap',
             'current_price': 'company__current_price',
             'pe_ratio': 'pe_ratio',
-            'dividend_yield': 'dividend_yield',
-            'net_margin': 'net_margin',
-            'roe': 'roe',
+            'industry': 'company__industry',
             'revenue_growth_yoy': 'revenue_growth_yoy',
+            'gross_margin': 'gross_margin',
+            'operating_margin': 'operating_margin',
             'debt_to_equity': 'debt_to_equity',
+            'free_cash_flow': 'free_cash_flow',
             'ticker': 'company__ticker',
             'name': 'company__name',
             'sector': 'company__sector',

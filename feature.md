@@ -92,6 +92,7 @@ Includes:
 - optional volume bars
 - SMA overlays
 - freshness / stale state
+- server-backed range cache with stale fallback
 - `lightweight-charts` presentation for the dedicated price surface
 - range-based downsampling: daily for short ranges, weekly for `5Y`, monthly for `MAX`
 
@@ -114,6 +115,8 @@ Includes:
 - 5-year projection chart
 - summary result cards
 - warnings for bad-fit sectors or weak data
+- not-applicable state for financial-sector companies
+- guardrails for negative earnings, negative free cash flow, and missing shares outstanding
 - `Recharts`-style dashboard visuals for the valuation workspace
 
 Prefilled assumptions:
@@ -146,8 +149,10 @@ Includes:
   - operating margin
   - debt-to-equity
   - positive free-cash-flow toggle
+- primary filters visible by default, with secondary filters behind a `More filters` expand
 - curated results table
 - sortable columns
+- API-driven filtering and sorting over `MetricSnapshot`
 
 Does not include:
 - saved screens

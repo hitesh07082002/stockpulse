@@ -69,7 +69,7 @@ Scheduled jobs:
 - `ingest_companies`
 - `ingest_financials`
 - `compute_snapshots`
-- `refresh_prices`
+- `update_prices`
 
 ### Why not Celery/Redis in V1
 

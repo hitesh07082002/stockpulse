@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { usePrices } from '../../hooks/useStockData';
 
@@ -23,16 +23,39 @@ function resolveTextColor() {
   return value || COLORS.textSecondaryDark;
 }
 
-function formatStaleness(updatedAt) {
-  if (!updatedAt) return null;
-  const diff = Date.now() - new Date(updatedAt).getTime();
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  if (hours < 1) return null;
-  return `Updated ${hours} hour${hours === 1 ? '' : 's'} ago`;
+function formatFreshnessLabel(timestamp) {
+  if (!timestamp) return null;
+
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+
+  if (minutes < 60) {
+    return `Last updated ${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `Last updated ${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `Last updated ${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function ChartSkeleton() {
   return <div className="h-[500px] w-full rounded-lg skeleton" />;
+}
+
+function StatePanel({ message, tone = 'default' }) {
+  const toneClass = tone === 'error'
+    ? 'border-error text-error'
+    : 'border-border text-text-secondary';
+
+  return (
+    <div className={`flex h-[500px] items-center justify-center rounded-lg border bg-surface px-6 text-center ${toneClass}`}>
+      <p className="font-body text-base">{message}</p>
+    </div>
+  );
 }
 
 function PriceTab({ ticker }) {
@@ -42,10 +65,22 @@ function PriceTab({ ticker }) {
   const priceSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
 
-  const { data, isLoading, isError, error } = usePrices(ticker, selectedRange);
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isError,
+    error,
+  } = usePrices(ticker, selectedRange);
+
+  const prices = useMemo(() => data?.data ?? [], [data]);
+  const hasPrices = prices.length > 0;
+  const staleLabel = data?.stale
+    ? formatFreshnessLabel(data?.fetched_at || data?.quote_updated_at) || 'Stale'
+    : null;
 
   useEffect(() => {
-    if (!containerRef.current || isLoading) return undefined;
+    if (!containerRef.current || !hasPrices) return undefined;
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth || 300,
@@ -100,7 +135,7 @@ function PriceTab({ ticker }) {
       priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [isLoading]);
+  }, [hasPrices, selectedRange]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -113,20 +148,13 @@ function PriceTab({ ticker }) {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [hasPrices]);
 
   useEffect(() => {
     const chart = chartRef.current;
     const priceSeries = priceSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
-    if (!chart || !priceSeries || !volumeSeries) return;
-
-    const prices = data?.data ?? data?.prices ?? [];
-    if (prices.length === 0) {
-      priceSeries.setData([]);
-      volumeSeries.setData([]);
-      return;
-    }
+    if (!chart || !priceSeries || !volumeSeries || !hasPrices) return;
 
     priceSeries.setData(
       prices.map((point) => ({
@@ -147,14 +175,7 @@ function PriceTab({ ticker }) {
     );
 
     chart.timeScale().fitContent();
-  }, [data]);
-
-  const stalenessMsg =
-    data?.stale && data?.updated_at
-      ? formatStaleness(data.updated_at)
-      : data?.stale
-        ? 'Data may be stale'
-        : null;
+  }, [hasPrices, prices]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -164,6 +185,7 @@ function PriceTab({ ticker }) {
             <button
               key={range}
               type="button"
+              aria-pressed={selectedRange === range}
               onClick={() => setSelectedRange(range)}
               className={`rounded-full border px-3 py-1.5 text-sm font-medium transition cursor-pointer ${
                 selectedRange === range
@@ -180,32 +202,36 @@ function PriceTab({ ticker }) {
           <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
             Adjusted close
           </span>
-          {stalenessMsg && (
+          {staleLabel ? (
             <span
               className="rounded-full px-3 py-1 text-xs font-medium"
               style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
             >
-              {stalenessMsg}
+              Stale · {staleLabel}
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 
-      {isLoading && <ChartSkeleton />}
+      {(isLoading || (isFetching && !hasPrices)) ? <ChartSkeleton /> : null}
 
-      {isError && (
-        <div className="py-12 text-center text-error">
-          Failed to load price data
-          {error?.message ? `: ${error.message}` : '.'}
-        </div>
-      )}
+      {!isLoading && isError ? (
+        <StatePanel
+          tone="error"
+          message={error?.message || 'Price data unavailable. Retry.'}
+        />
+      ) : null}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && !hasPrices ? (
+        <StatePanel message={data?.message || 'No price history available'} />
+      ) : null}
+
+      {!isLoading && !isError && hasPrices ? (
         <div
           ref={containerRef}
           className="h-[500px] w-full overflow-hidden rounded-lg"
         />
-      )}
+      ) : null}
     </div>
   );
 }

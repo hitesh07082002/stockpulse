@@ -28,3 +28,31 @@ test('landing search leads into the stock detail financials hero flow', async ({
   await expect(page.getByRole('heading', { name: 'Revenue' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'More Metrics' })).toBeVisible();
 });
+
+test('price tab supports range selection', async ({ page }) => {
+  await page.goto('/stock/AAPL');
+
+  await page.getByRole('tab', { name: 'Price' }).click();
+  await expect(page.getByText(/adjusted close/i)).toBeVisible();
+
+  const fiveYearButton = page.getByRole('button', { name: '5Y' });
+  await fiveYearButton.click();
+
+  await expect(fiveYearButton).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('screener filters into a company detail flow', async ({ page }) => {
+  await page.goto('/screener');
+
+  await page.getByRole('button', { name: /large >\$10b/i }).click();
+  await page.getByRole('button', { name: /apply filters/i }).click();
+
+  const firstRow = page.locator('tbody tr').first();
+  await expect(firstRow).toBeVisible();
+
+  const ticker = (await firstRow.locator('td').first().innerText()).trim();
+  await firstRow.click();
+
+  await expect(page).toHaveURL(new RegExp(`/stock/${ticker}$`));
+  await expect(page.getByText(ticker, { exact: true })).toBeVisible();
+});

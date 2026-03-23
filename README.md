@@ -81,7 +81,7 @@ Do not jump ahead to AI polish or peripheral product features before the Financi
 
 ## Milestone Progress
 
-M1, M2, and M3 are complete and verified.
+M1, M2, M3, and M4 are complete and verified.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
@@ -95,6 +95,10 @@ Already in place:
 - stock detail shell with quote freshness and mobile-safe tab bar
 - overview and financials tabs wired to canonical company detail, snapshot, and SEC facts endpoints
 - company list/detail/financials API coverage, frontend state coverage, and landing -> detail -> Financials smoke coverage
+- cache-backed price ranges with stale fallback and adjusted-close line charts
+- valuation guardrails for financial-sector disable, negative earnings / FCF warnings, and missing shares-outstanding handling
+- focused screener filters and API-driven sorting on top of `MetricSnapshot`
+- M4 API coverage, frontend unit coverage for price/valuation/screener states, and smoke coverage for price range selection and screener -> company navigation
 
 Latest verification pass:
 - `make lint`
@@ -104,7 +108,9 @@ Latest verification pass:
 - `make qa-smoke`
 
 Next up:
-- M4 price, valuation, and screener hardening is next
+- M5 authentication is next
+
+Current data layer status:
 - M2 ingestion and canonical data is complete
 - the schema cut, metric registry, canonical `ingest_financials`, `update_prices`, and `compute_snapshots` are now in place
 - local SQLite dev data was reset and rebuilt from the real pipeline with the full 500-company universe

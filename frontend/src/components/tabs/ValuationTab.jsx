@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -105,6 +105,32 @@ function AssumptionField({ label, suffix, helper, value, onChange, step = '0.1' 
   );
 }
 
+function StatePanel({ message, tone = 'default' }) {
+  const toneClass = tone === 'error'
+    ? 'border-error text-error'
+    : 'border-border text-text-secondary';
+
+  return (
+    <div className={`rounded-lg border bg-surface px-6 py-10 text-center ${toneClass}`}>
+      <p className="font-body text-base">{message}</p>
+    </div>
+  );
+}
+
+function WarningList({ warnings }) {
+  if (!warnings?.length) return null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.08)] px-4 py-4">
+      {warnings.map((warning) => (
+        <p key={warning} className="font-body text-sm text-[#F59E0B]">
+          {warning}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ValuationTab({ ticker }) {
   const { data, isLoading, error } = useValuationInputs(ticker);
   const [modeKey, setModeKey] = useState('earnings');
@@ -119,11 +145,7 @@ function ValuationTab({ ticker }) {
   const growthRate = modeDraft.growthRate
     ?? (modeData?.growth_rate_default != null ? String(modeData.growth_rate_default) : '');
   const terminalMultiple = modeDraft.terminalMultiple
-    ?? (
-      modeData?.terminal_multiple_default != null
-        ? String(modeData.terminal_multiple_default)
-        : ''
-    );
+    ?? (modeData?.terminal_multiple_default != null ? String(modeData.terminal_multiple_default) : '');
   const desiredReturn = modeDraft.desiredReturn
     ?? (modeData?.desired_return_default != null ? String(modeData.desired_return_default) : '');
 
@@ -141,17 +163,26 @@ function ValuationTab({ ticker }) {
   const growthValue = toNumber(growthRate);
   const multipleValue = toNumber(terminalMultiple);
   const desiredReturnValue = toNumber(desiredReturn);
+  const projectionBlocked = data?.not_applicable
+    || !modeData?.available
+    || metricValue == null
+    || metricValue <= 0
+    || growthValue == null
+    || multipleValue == null
+    || multipleValue <= 0;
 
   const projectionData = useMemo(
-    () => buildProjection(metricValue, growthValue, multipleValue, projectionYears, currentPrice),
-    [metricValue, growthValue, multipleValue, projectionYears, currentPrice],
+    () => (projectionBlocked
+      ? []
+      : buildProjection(metricValue, growthValue, multipleValue, projectionYears, currentPrice)),
+    [projectionBlocked, metricValue, growthValue, multipleValue, projectionYears, currentPrice],
   );
 
   const futurePrice = projectionData.at(-1)?.projectedPrice ?? null;
-  const annualizedReturn = useMemo(() => {
+  const upsideDownside = useMemo(() => {
     if (futurePrice == null || currentPrice == null || currentPrice <= 0) return null;
-    return (((futurePrice / currentPrice) ** (1 / projectionYears)) - 1) * 100;
-  }, [futurePrice, currentPrice, projectionYears]);
+    return ((futurePrice - currentPrice) / currentPrice) * 100;
+  }, [futurePrice, currentPrice]);
 
   const entryPrice = useMemo(() => {
     if (futurePrice == null || desiredReturnValue == null) return null;
@@ -160,38 +191,41 @@ function ValuationTab({ ticker }) {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-border bg-surface p-8 text-center">
-        <span className="font-body text-base text-text-secondary">Loading valuation inputs...</span>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <div className="h-[560px] rounded-2xl skeleton" />
+        <div className="h-[560px] rounded-2xl skeleton" />
       </div>
     );
   }
 
   if (error) {
+    return <StatePanel tone="error" message="Valuation inputs unavailable" />;
+  }
+
+  if (data?.not_applicable) {
     return (
-      <div className="rounded-lg border border-error bg-surface p-8 text-center">
-        <span className="font-body text-base text-error">
-          Failed to load valuation inputs. Please try again later.
-        </span>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <section className="rounded-2xl border border-border bg-surface p-6">
+          <h3 className="font-display text-2xl font-semibold text-text-primary">Valuation</h3>
+          <WarningList warnings={data?.warnings} />
+        </section>
+        <StatePanel message={data?.not_applicable_reason || 'Not applicable for financial sector companies'} />
       </div>
     );
   }
 
   if (!modeData) {
-    return (
-      <div className="rounded-lg border border-border bg-surface p-8 text-center">
-        <span className="font-body text-base text-text-secondary">
-          Valuation inputs are unavailable for {ticker}.
-        </span>
-      </div>
-    );
+    return <StatePanel message="Insufficient data for valuation" />;
   }
 
-  const modeAvailable = modeData.current_metric_value != null;
   const currentTradingMultiple = toNumber(modeData.current_trading_multiple);
   const currentMetricLabel = modeData.current_metric_label || 'Current Metric';
   const terminalLabel = modeKey === 'cashFlow'
     ? 'Appropriate FCF Multiple'
     : 'Appropriate EPS Multiple';
+  const projectionMessage = modeData.available
+    ? 'Adjust the current metric and assumptions to see the five-year projection.'
+    : (modeData.availability_reason || 'Insufficient data for valuation');
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
@@ -245,11 +279,7 @@ function ValuationTab({ ticker }) {
             </div>
           </div>
 
-          {!modeAvailable ? (
-            <div className="rounded-xl border border-border bg-elevated px-4 py-5 text-sm text-text-secondary">
-              This mode is not available yet because the current {currentMetricLabel.toLowerCase()} input is missing.
-            </div>
-          ) : (
+          {modeData.available ? (
             <div className="flex flex-col gap-5">
               <AssumptionField
                 label={`${currentMetricLabel} (editable)`}
@@ -278,17 +308,13 @@ function ValuationTab({ ticker }) {
                 onChange={(value) => updateModeDraft('desiredReturn', value)}
               />
             </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-elevated px-4 py-5 text-sm text-text-secondary">
+              {modeData.availability_reason || 'Insufficient data for valuation'}
+            </div>
           )}
 
-          {(data?.warnings?.length ?? 0) > 0 ? (
-            <div className="flex flex-col gap-2 rounded-xl border border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.08)] px-4 py-4">
-              {data.warnings.map((warning) => (
-                <p key={warning} className="font-body text-sm text-[#F59E0B]">
-                  {warning}
-                </p>
-              ))}
-            </div>
-          ) : null}
+          <WarningList warnings={data?.warnings} />
         </div>
       </section>
 
@@ -307,9 +333,9 @@ function ValuationTab({ ticker }) {
             </div>
             <div>
               <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Return From Today
+                Upside / Downside vs Today
               </div>
-              <div className="font-data text-2xl text-text-primary">{formatPercent(annualizedReturn)}</div>
+              <div className="font-data text-2xl text-text-primary">{formatPercent(upsideDownside)}</div>
             </div>
             <div>
               <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
@@ -320,46 +346,38 @@ function ValuationTab({ ticker }) {
           </div>
 
           {projectionData.length > 0 ? (
-            <div className="h-[360px] w-full">
-              <ResponsiveContainer width="100%" height={360}>
-                <LineChart data={projectionData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+            <div className="h-[340px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projectionData} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                    axisLine={{ stroke: 'var(--color-border)' }}
+                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+                    axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                    tickFormatter={(value) => `$${value.toFixed(0)}`}
+                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(value) => formatCurrency(value)}
-                    width={86}
+                    width={72}
                   />
-                  <Tooltip content={<ProjectionTooltip />} cursor={{ stroke: 'var(--color-text-tertiary)', strokeDasharray: '3 3' }} />
+                  <Tooltip content={<ProjectionTooltip />} />
                   <Line
                     type="monotone"
                     dataKey="projectedPrice"
-                    stroke="#14B8A6"
+                    stroke="var(--color-accent)"
                     strokeWidth={2.5}
-                    dot={{ r: 4, fill: '#14B8A6', stroke: '#09090B', strokeWidth: 2 }}
-                    activeDot={{ r: 5, fill: '#14B8A6', stroke: '#09090B', strokeWidth: 2 }}
+                    dot={{ r: 4, fill: 'var(--color-accent)' }}
+                    activeDot={{ r: 6 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed border-border bg-elevated px-6 text-center">
-              <p className="font-body text-sm text-text-secondary">
-                Fill the current metric, growth rate, terminal multiple, and desired return to see the five-year valuation path.
-              </p>
-            </div>
+            <StatePanel message={projectionMessage} />
           )}
-
-          <p className="font-body text-sm text-text-tertiary">
-            This workspace intentionally stays Qualtrim-like: one current metric plus three forward assumptions, then a five-year price projection and an implied entry price.
-          </p>
         </div>
       </section>
     </div>

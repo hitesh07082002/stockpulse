@@ -547,7 +547,7 @@ Implementation order:
 - 8.2.3 DONE Persist bounded raw SEC payloads in `RawSecPayload`, rebuild `ingest_companies`, and rebuild `ingest_financials` against the canonical schema
 - 8.2.4 DONE Replace legacy `compute_metrics` with `compute_snapshots` on top of canonical facts only
 - 8.2.5 DONE Expand from the rebuilt 25-company development seed set to full S&P 500 coverage and record the launch coverage audit at `95%+` launch-critical metric coverage; the full-universe rebuild, cached replay path, and passing audit artifact are landed
-- 8.2.6 DONE M2 includes basic quote refresh (`refresh_prices`) that populates `Company` quote fields (`current_price`, `market_cap`, `quote_updated_at`, etc.) and feeds `MetricSnapshot` computation. This is sufficient for the M3 company header. The full `PriceCache` range system (range-keyed blobs, TTLs, stale fallback, downsampling) is built in M4.
+- 8.2.6 DONE M2 includes basic quote refresh (`update_prices`) that populates `Company` quote fields (`current_price`, `market_cap`, `quote_updated_at`, etc.) and feeds `MetricSnapshot` computation. This is sufficient for the M3 company header. The full `PriceCache` range system (range-keyed blobs, TTLs, stale fallback, downsampling) is built in M4.
 
 ### 8.3 M3 — Public Read APIs and Stock Detail Shell
 
@@ -562,14 +562,14 @@ Implementation order:
 
 ### 8.4 M4 — Price, Valuation, and Screener
 
-**Status:** PENDING
+**Status:** DONE
 
 **Dimensions:**
-- 8.4.1 PENDING Build quote and price cache flows
-- 8.4.2 PENDING Build Price tab with stale fallback
-- 8.4.3 PENDING Build valuation inputs and a Qualtrim-style DCF calculator
-- 8.4.4 PENDING Build the focused V1 screener on top of `MetricSnapshot`
-- 8.4.5 PENDING Required tests: API endpoint tests for prices (each range + stale fallback), valuation-inputs, screener (filters + sort + empty); unit tests for valuation guardrails (financial-sector disable, negative earnings, negative FCF, missing shares_outstanding); Playwright smoke for price tab range selector and screener filter-to-company flow
+- 8.4.1 DONE Build quote and price cache flows
+- 8.4.2 DONE Build Price tab with stale fallback
+- 8.4.3 DONE Build valuation inputs and a Qualtrim-style DCF calculator
+- 8.4.4 DONE Build the focused V1 screener on top of `MetricSnapshot`
+- 8.4.5 DONE Required tests: API endpoint tests for prices (each range + stale fallback), valuation-inputs, screener (filters + sort + empty); unit tests for valuation guardrails (financial-sector disable, negative earnings, negative FCF, missing shares_outstanding); Playwright smoke for price tab range selector and screener filter-to-company flow
 
 ### 8.5 M5 — Authentication
 
@@ -629,9 +629,9 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.3 M4 Gates (Price, Valuation, Screener)
 
-- 9.3.1 PENDING API endpoint tests: prices (each range + stale), valuation-inputs, screener (filters + sort + empty)
-- 9.3.2 PENDING Valuation guardrail tests: financial-sector disable, negative earnings warning, negative FCF warning, missing shares_outstanding
-- 9.3.3 PENDING Playwright smoke: price tab range selector, screener filter-to-company flow
+- 9.3.1 DONE API endpoint tests: prices (each range + stale), valuation-inputs, screener (filters + sort + empty)
+- 9.3.2 DONE Valuation guardrail tests: financial-sector disable, negative earnings warning, negative FCF warning, missing shares_outstanding
+- 9.3.3 DONE Playwright smoke: price tab range selector, screener filter-to-company flow
 
 ### 9.4 M5 Gates (Authentication)
 

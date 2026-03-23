@@ -94,6 +94,7 @@ class MetricSnapshotSerializer(serializers.ModelSerializer):
     ticker = serializers.CharField(source='company.ticker')
     name = serializers.CharField(source='company.name')
     sector = serializers.CharField(source='company.sector')
+    industry = serializers.CharField(source='company.industry')
     current_price = serializers.DecimalField(
         source='company.current_price', max_digits=12, decimal_places=2, allow_null=True
     )
@@ -102,7 +103,7 @@ class MetricSnapshotSerializer(serializers.ModelSerializer):
     class Meta:
         model = MetricSnapshot
         fields = [
-            'ticker', 'name', 'sector', 'current_price', 'market_cap',
+            'ticker', 'name', 'sector', 'industry', 'current_price', 'market_cap',
             'pe_ratio', 'dividend_yield', 'revenue_growth_yoy',
             'gross_margin', 'operating_margin', 'net_margin', 'roe', 'debt_to_equity',
             'free_cash_flow',
