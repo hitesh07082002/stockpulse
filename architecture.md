@@ -47,7 +47,7 @@ The architecture is intentionally boring in V1: PostgreSQL-backed truth, Django 
                             ▼
          ┌────────────────────────────────────────────────────┐
          │ ingest_companies / ingest_financials /            │
-         │ compute_snapshots / refresh_prices                │
+         │ compute_snapshots / update_prices                 │
          └───────────────┬───────────────────────┬───────────┘
                          │                       │
                          ▼                       ▼
@@ -101,17 +101,27 @@ M2 execution rules:
 Price data is not treated as live truth. It is a cached supporting surface.
 
 ```text
-yfinance ──► refresh_prices ──► PriceCache + Company quote fields
-                                   │
-                                   └─ stale metadata exposed to UI
+yfinance ──► update_prices ──► Company quote fields
+                  │
+                  └─ prices endpoint fills / refreshes PriceCache by range
+                                          │
+                                          └─ stale metadata exposed to UI
 ```
 
 Responsibilities:
+- keep company header quote fields fresh on a scheduled cadence
 - serve range-based price charts quickly
 - serve adjusted-close trend lines by default for research-oriented price context
 - surface freshness clearly
 - bound long-range payload size with deterministic downsampling by range
 - fall back to stale data instead of failing silently
+
+Current M4 behavior:
+- `update_prices` maintains `Company.current_price`, `market_cap`, `week_52_high`, `week_52_low`, `shares_outstanding`, and `quote_updated_at`
+- `/api/companies/:ticker/prices` reads through `PriceCache`
+- on cache miss or expired cache, the endpoint refreshes that range from `yfinance`, stores it in `PriceCache`, and returns the cached payload
+- if the refresh fails but an older cached range exists, the stale cached payload is served with `stale=true`
+- range downsampling is fixed by contract: short ranges stay daily or trading-day, `5Y` is weekly, and `MAX` is monthly
 
 ### 3. Public Read APIs
 
@@ -129,6 +139,7 @@ Design rules:
 - financial endpoints expose canonical values only
 - financial and valuation visuals use dashboard-style charts, while the dedicated price surface uses a separate market-chart library
 - valuation inputs support two calculator modes: `Earnings` and `Cash Flow`, where `Cash Flow` uses free cash flow per share
+- screener sorting and filtering are server-driven for the focused V1 surface, not client-side over the full universe
 
 ### 4. Authentication
 

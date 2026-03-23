@@ -39,6 +39,7 @@ export function usePrices(ticker, range) {
     queryKey: ['prices', ticker, range],
     queryFn: () => fetchPrices(ticker, range),
     enabled: !!ticker,
+    staleTime: 60 * 1000,
   });
 }
 
@@ -50,9 +51,15 @@ export function useValuationInputs(ticker) {
   });
 }
 
-export function useScreener(filters) {
+export function useScreener(filters, sort, order, page) {
   return useQuery({
-    queryKey: ['screener', filters],
-    queryFn: () => fetchScreener(filters),
+    queryKey: ['screener', filters, sort, order, page],
+    queryFn: () => fetchScreener({
+      ...filters,
+      sort,
+      order,
+      page,
+    }),
+    placeholderData: (previousData) => previousData,
   });
 }
