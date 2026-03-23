@@ -11,6 +11,7 @@
 ### Company Metadata Enrichment
 **What:** Enrich Company records with `description`, `website`, and `exchange` from a secondary source (e.g., yfinance `.info` or a curated CSV). Currently these fields are blank for most companies.
 **Why:** The Overview tab and company header benefit from having company descriptions and exchange info. Blank bios are a poor UX for a portfolio project demonstrating product polish. Not a launch blocker but should land before M7 hardening.
+**Plan:** See [`docs/company-metadata-ingestion-plan.md`](./docs/company-metadata-ingestion-plan.md).
 **Depends on:** M3 stock detail shell (so you can see the impact).
 **Status:** Not started
 
