@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
+import { AuthProvider } from './components/auth/AuthContext';
 import LandingPage from './pages/LandingPage';
 
 const StockDetailPage = lazy(() => import('./pages/StockDetailPage'));
@@ -21,35 +22,37 @@ function RouteFallback() {
 
 function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route
-          path="/stock/:ticker"
-          element={(
-            <Suspense fallback={<RouteFallback />}>
-              <StockDetailPage />
-            </Suspense>
-          )}
-        />
-        <Route
-          path="/screener"
-          element={(
-            <Suspense fallback={<RouteFallback />}>
-              <ScreenerPage />
-            </Suspense>
-          )}
-        />
-        <Route
-          path="/about"
-          element={(
-            <Suspense fallback={<RouteFallback />}>
-              <AboutPage />
-            </Suspense>
-          )}
-        />
-      </Routes>
-    </Layout>
+    <AuthProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/stock/:ticker"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <StockDetailPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/screener"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <ScreenerPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/about"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <AboutPage />
+              </Suspense>
+            )}
+          />
+        </Routes>
+      </Layout>
+    </AuthProvider>
   );
 }
 

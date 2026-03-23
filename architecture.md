@@ -160,6 +160,8 @@ Rules:
 - Google auth is backend-managed redirect/callback, not a frontend token-post flow
 - JWTs live in `httpOnly` cookies
 - refresh is cookie-based; the frontend does not store refresh tokens
+- frontend shell state bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie used by state-changing auth requests
+- local development may use a debug-only mock Google consent page when real Google OAuth credentials are absent; production never uses that harness
 
 ### 5. AI Copilot
 

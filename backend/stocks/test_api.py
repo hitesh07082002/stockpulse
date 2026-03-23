@@ -151,6 +151,16 @@ def test_company_detail_returns_404_for_unknown_ticker(api_client):
 
 
 @pytest.mark.django_db
+def test_public_company_detail_ignores_invalid_auth_cookie(api_client, company):
+    api_client.cookies["access_token"] = "stale-or-invalid-token"
+
+    response = api_client.get("/api/companies/msft/")
+
+    assert response.status_code == 200
+    assert response.json()["ticker"] == "MSFT"
+
+
+@pytest.mark.django_db
 def test_company_list_search_returns_paginated_results(api_client, company):
     Company.objects.create(
         cik="0001326801",

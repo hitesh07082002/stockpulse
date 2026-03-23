@@ -56,9 +56,37 @@ async function buildApiError(response) {
   return error;
 }
 
+function getCSRFToken() {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 async function get(path, params) {
   const response = await fetch(buildURL(path, params), {
     credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw await buildApiError(response);
+  }
+
+  return response.json();
+}
+
+async function post(path, body, options = {}) {
+  const response = await fetch(buildURL(path), {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getCSRFToken() ? { 'X-CSRFToken': getCSRFToken() } : {}),
+      ...(options.headers || {}),
+    },
+    body: JSON.stringify(body ?? {}),
   });
 
   if (!response.ok) {
@@ -92,12 +120,48 @@ export async function fetchScreener(params) {
   return get('/screener/', params);
 }
 
+export async function fetchAuthSession() {
+  return get('/auth/session/');
+}
+
+export async function registerAuth(payload) {
+  return post('/auth/register/', payload);
+}
+
+export async function loginAuth(payload) {
+  return post('/auth/login/', payload);
+}
+
+export async function refreshAuth() {
+  return post('/auth/refresh/', {});
+}
+
+export async function logoutAuth() {
+  return post('/auth/logout/', {});
+}
+
+export function startGoogleAuth(nextPath) {
+  const currentPath = nextPath || (typeof window !== 'undefined'
+    ? `${window.location.pathname}${window.location.search}`
+    : '/');
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  const target = buildURL('/auth/google/start/', {
+    next: currentPath,
+    origin,
+  });
+
+  if (typeof window !== 'undefined') {
+    window.location.assign(target);
+  }
+}
+
 export async function* sendChatMessage(ticker, message) {
   const response = await fetch(buildURL(`/companies/${ticker}/copilot/`), {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(getCSRFToken() ? { 'X-CSRFToken': getCSRFToken() } : {}),
     },
     body: JSON.stringify({ message }),
   });

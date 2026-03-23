@@ -60,7 +60,7 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 5.2 DONE M2 — Ingestion and Canonical Data: schema cut, canonical ingestion, full 500-company rebuild, quotes, snapshots, cached replay from retained raw payloads, and a passing launch coverage audit artifact are landed
 - 5.3 DONE M3 — Public Read APIs and Stock Detail Shell: landing, company detail, overview, and Financials hero
 - 5.4 DONE M4 — Price, Valuation, and Screener: cache-backed price ranges with stale fallback, guarded Qualtrim-style DCF, and a focused `MetricSnapshot` screener
-- 5.5 PENDING M5 — Authentication: secure cookies, Google-first auth flow, frontend auth context
+- 5.5 DONE M5 — Authentication: secure cookies, `/api/auth/session/` bootstrap, Google-first auth flow, frontend auth context, and shell auth modal
 - 5.6 PENDING M6 — AI Copilot: grounded context assembly, quota enforcement, spend enforcement, SSE UI
 - 5.7 PENDING M7 — Hardening and Deploy: scheduled worker, production config, accessibility, performance, docs polish
 
