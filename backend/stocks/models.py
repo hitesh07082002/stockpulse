@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.conf import settings
 from django.db import models
 
@@ -232,23 +230,3 @@ class AIUsageCounter(models.Model):
                 name="stocks_aiusage_key_day",
             ),
         ]
-
-
-class AIBudgetDay(models.Model):
-    day = models.DateField(unique=True)
-    request_count = models.PositiveIntegerField(default=0)
-    reserved_cost_usd = models.DecimalField(
-        max_digits=12,
-        decimal_places=4,
-        default=Decimal("0.0000"),
-    )
-    actual_cost_usd = models.DecimalField(
-        max_digits=12,
-        decimal_places=4,
-        default=Decimal("0.0000"),
-    )
-    hard_stop_triggered_at = models.DateTimeField(null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-day"]

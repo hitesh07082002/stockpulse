@@ -2,8 +2,6 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import date
-from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -23,7 +21,7 @@ from .ai_providers import (
     ProviderUnavailableError,
     get_ai_provider,
 )
-from .models import AIBudgetDay, AIUsageCounter, Company
+from .models import AIUsageCounter, Company
 from .serializers import ChatMessageSerializer
 
 
@@ -39,12 +37,6 @@ class IdentityReservation:
     used: int
     remaining: int
     cookie_value: str | None = None
-
-
-@dataclass
-class BudgetReservation:
-    day: date
-    amount_usd: Decimal
 
 
 class CopilotRequestError(Exception):
@@ -67,7 +59,6 @@ class CopilotRequestError(Exception):
 
 def build_copilot_response(request, ticker):
     identity = resolve_identity_reservation(request)
-    budget = None
     try:
         serializer = _validated_payload(request)
         company = _get_company_or_error(ticker)
@@ -79,10 +70,6 @@ def build_copilot_response(request, ticker):
         system_prompt = render_system_prompt(context)
         conversation = list(serializer.validated_data.get("history", []))
         conversation.append({"role": "user", "content": serializer.validated_data["message"]})
-        reservation_amount = provider.estimate_reservation_usd(
-            json.dumps({"system": system_prompt, "conversation": conversation}, sort_keys=True)
-        )
-        budget = reserve_budget(reservation_amount)
         identity = reserve_daily_quota(identity)
     except ProviderUnavailableError as exc:
         response = Response(
@@ -96,8 +83,6 @@ def build_copilot_response(request, ticker):
         maybe_set_anon_cookie(response, identity.cookie_value)
         return response
     except CopilotRequestError as exc:
-        if budget is not None:
-            reconcile_budget(budget, Decimal("0.0000"))
         response = exc.to_response()
         maybe_set_anon_cookie(response, identity.cookie_value)
         return response
@@ -111,7 +96,6 @@ def build_copilot_response(request, ticker):
     response = StreamingHttpResponse(
         _stream_copilot_events(
             provider=provider,
-            budget=budget,
             conversation=conversation,
             company=company,
             identity=identity,
@@ -187,59 +171,7 @@ def reserve_daily_quota(identity):
     return identity
 
 
-@transaction.atomic
-def reserve_budget(amount_usd):
-    amount = Decimal(amount_usd)
-    budget_day, _created = AIBudgetDay.objects.select_for_update().get_or_create(
-        day=current_ai_day(),
-        defaults={
-            "request_count": 0,
-            "reserved_cost_usd": Decimal("0.0000"),
-            "actual_cost_usd": Decimal("0.0000"),
-        },
-    )
-
-    current_total = Decimal(budget_day.actual_cost_usd) + Decimal(budget_day.reserved_cost_usd)
-    if current_total + amount > settings.AI_DAILY_BUDGET_USD:
-        if budget_day.hard_stop_triggered_at is None:
-            budget_day.hard_stop_triggered_at = timezone.now()
-            budget_day.save(update_fields=["hard_stop_triggered_at", "updated_at"])
-        raise CopilotRequestError(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            code="budget_exhausted",
-            message="The AI copilot is over today's budget. Please try again tomorrow.",
-        )
-
-    budget_day.request_count += 1
-    budget_day.reserved_cost_usd = Decimal(budget_day.reserved_cost_usd) + amount
-    budget_day.save(update_fields=["request_count", "reserved_cost_usd", "updated_at"])
-    return BudgetReservation(day=budget_day.day, amount_usd=amount)
-
-
-@transaction.atomic
-def reconcile_budget(budget, actual_cost_usd):
-    budget_day = AIBudgetDay.objects.select_for_update().get(day=budget.day)
-    actual = Decimal(actual_cost_usd)
-    budget_day.reserved_cost_usd = max(
-        Decimal("0.0000"),
-        Decimal(budget_day.reserved_cost_usd) - Decimal(budget.amount_usd),
-    )
-    budget_day.actual_cost_usd = Decimal(budget_day.actual_cost_usd) + actual
-    if budget_day.actual_cost_usd >= settings.AI_DAILY_BUDGET_USD and budget_day.hard_stop_triggered_at is None:
-        budget_day.hard_stop_triggered_at = timezone.now()
-    budget_day.save(
-        update_fields=[
-            "reserved_cost_usd",
-            "actual_cost_usd",
-            "hard_stop_triggered_at",
-            "updated_at",
-        ]
-    )
-
-
-def _stream_copilot_events(*, provider, budget, conversation, company, identity, meta_payload, system_prompt):
-    usage = None
-    actual_cost = Decimal("0.0000")
+def _stream_copilot_events(*, provider, conversation, company, identity, meta_payload, system_prompt):
     streamed_text = False
     try:
         yield _sse_event("meta", meta_payload)
@@ -247,11 +179,7 @@ def _stream_copilot_events(*, provider, budget, conversation, company, identity,
             if event.type == "text" and event.text:
                 streamed_text = True
                 yield _sse_event("text", {"content": event.text})
-            elif event.type == "usage":
-                usage = event.usage
 
-        actual_cost = provider.calculate_actual_cost_usd(usage)
-        reconcile_budget(budget, actual_cost)
         yield _sse_event(
             "done",
             {
@@ -261,8 +189,6 @@ def _stream_copilot_events(*, provider, budget, conversation, company, identity,
             },
         )
     except ProviderTimeoutError:
-        actual_cost = provider.calculate_actual_cost_usd(usage)
-        reconcile_budget(budget, actual_cost)
         yield _sse_event(
             "error",
             {
@@ -273,8 +199,6 @@ def _stream_copilot_events(*, provider, budget, conversation, company, identity,
             },
         )
     except (ProviderResponseError, ProviderUnavailableError):
-        actual_cost = provider.calculate_actual_cost_usd(usage)
-        reconcile_budget(budget, actual_cost)
         yield _sse_event(
             "error",
             {
@@ -285,8 +209,6 @@ def _stream_copilot_events(*, provider, budget, conversation, company, identity,
             },
         )
     except Exception:
-        actual_cost = provider.calculate_actual_cost_usd(usage)
-        reconcile_budget(budget, actual_cost)
         yield _sse_event(
             "error",
             {
@@ -297,8 +219,6 @@ def _stream_copilot_events(*, provider, budget, conversation, company, identity,
             },
         )
     except GeneratorExit:
-        actual_cost = provider.calculate_actual_cost_usd(usage)
-        reconcile_budget(budget, actual_cost)
         raise
 
 
