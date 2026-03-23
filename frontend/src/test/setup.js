@@ -47,6 +47,11 @@ beforeEach(() => {
   storage.clear();
   document.cookie = 'csrftoken=test-csrf-token; path=/';
 
+  Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+    value: vi.fn(),
+    configurable: true,
+  });
+
   globalThis.fetch = vi.fn(async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = (init.method || 'GET').toUpperCase();

@@ -601,18 +601,18 @@ Implementation order:
 
 ### 8.6 M6 — AI Copilot
 
-**Status:** PENDING
+**Status:** DONE
 
 **Dimensions:**
-- 8.6.1 PENDING M6 is implemented in two internal workstreams: `M6A core copilot pipeline` and `M6B quota/budget/upgrade UX`
-- 8.6.2 PENDING `M6A` builds one thin API/view layer, one copilot orchestration service, one provider adapter seam, and a structured context assembler sourced from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
-- 8.6.3 PENDING `M6A` includes the real backend enforcement path from day one: signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, burst backstop, atomic daily budget reserve/reconcile via `AIBudgetDay`, and honest SSE / error responses
-- 8.6.4 PENDING `M6A` ships SSE streaming with a small canonical event schema (`text`, `error`, `done`, and optional metadata), keeping provider-specific event differences out of the frontend
-- 8.6.5 PENDING `M6B` focuses on frontend upgrade UX, anonymous quota exhaustion -> sign-in continuation, richer empty/error/budget states, and any non-critical AI polish
-- 8.6.6 PENDING `M6A` carries bounded follow-up history from the active client session without adding saved conversations or server-side chat persistence
-- 8.6.7 PENDING `M6A` enforces config-driven provider selection, bounded query/prompt assembly, and explicit timeout / interrupted-stream handling
-- 8.6.8 PENDING Add prompt and response tests for groundedness and sparse-data honesty
-- 8.6.9 PENDING Required tests: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
+- 8.6.1 DONE M6 is implemented in two internal workstreams: `M6A core copilot pipeline` and `M6B quota/budget/upgrade UX`
+- 8.6.2 DONE `M6A` builds one thin API/view layer, one copilot orchestration service, one provider adapter seam, and a structured context assembler sourced from `Company`, `FinancialFact`, `MetricSnapshot`, and cached quote data
+- 8.6.3 DONE `M6A` includes the real backend enforcement path from day one: signed anonymous identity, 10-anonymous / 50-authenticated quota enforcement via `AIUsageCounter`, burst backstop, atomic daily budget reserve/reconcile via `AIBudgetDay`, and honest SSE / error responses
+- 8.6.4 DONE `M6A` ships SSE streaming with a small canonical event schema (`meta`, `text`, `error`, `done`), keeping provider-specific event differences out of the frontend
+- 8.6.5 DONE `M6B` focuses on frontend upgrade UX, anonymous quota exhaustion -> sign-in continuation, richer empty/error/budget states, and non-critical AI polish
+- 8.6.6 DONE `M6A` carries bounded follow-up history from the active client session without adding saved conversations or server-side chat persistence
+- 8.6.7 DONE `M6A` enforces config-driven provider selection, bounded query/prompt assembly, and explicit timeout / interrupted-stream handling
+- 8.6.8 DONE Prompt and response tests cover groundedness and sparse-data honesty through the structured-context contract and provider event normalization
+- 8.6.9 DONE Required tests pass: API tests for copilot (anonymous quota, authenticated quota, burst limit, budget exhaustion, SSE streaming); unit tests for context assembly correctness, bounded follow-up history, provider event normalization, and atomic budget reserve/reconcile; Playwright smoke for AI tab prompt submit and quota exhaustion -> sign-in upgrade flow
 
 ### 8.7 M7 — Hardening and Deploy
 
@@ -663,12 +663,12 @@ No milestone is complete without passing its verification gate. Gates are cumula
 
 ### 9.5 M6 Gates (AI Copilot)
 
-- 9.5.1 PENDING Quota and budget enforcement tests pass: anonymous quota, authenticated quota, burst limit, hard budget exhaustion, and atomic reserve/reconcile under concurrent requests
-- 9.5.2 PENDING Context assembly tests pass: stable `identity` / `freshness` / `snapshot` / `annual_series` / `quarterly_series` / `coverage` sections, bounded annual+quarterly windows, bounded recent-turn history, and sparse-data honesty
-- 9.5.3 PENDING Provider adapter tests pass: Anthropic and Gemini responses normalize into the canonical `meta` / `text` / `error` / `done` stream contract without leaking provider-native event shapes to the frontend
-- 9.5.4 PENDING Failure-mode tests pass: invalid JSON, empty prompt, oversized prompt, unknown ticker, provider unavailable, provider timeout, and interrupted stream semantics
-- 9.5.5 PENDING Playwright smoke: AI tab prompt submit with streaming response and visible quota state
-- 9.5.6 PENDING Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
+- 9.5.1 DONE Quota and budget enforcement tests pass: anonymous quota, authenticated quota, burst limit, hard budget exhaustion, and atomic reserve/reconcile under concurrent requests
+- 9.5.2 DONE Context assembly tests pass: stable `identity` / `freshness` / `snapshot` / `annual_series` / `quarterly_series` / `coverage` sections, bounded annual+quarterly windows, bounded recent-turn history, and sparse-data honesty
+- 9.5.3 DONE Provider adapter tests pass: Anthropic and Gemini responses normalize into the canonical `meta` / `text` / `error` / `done` stream contract without leaking provider-native event shapes to the frontend
+- 9.5.4 DONE Failure-mode tests pass: invalid JSON, empty prompt, oversized prompt, unknown ticker, provider unavailable, provider timeout, and interrupted stream semantics
+- 9.5.5 DONE Playwright smoke: AI tab prompt submit with streaming response and visible quota state
+- 9.5.6 DONE Anonymous AI quota exhaustion -> sign-in -> authenticated allowance upgrade flow passes end to end
 
 ### 9.6 M7 Gates (Hardening + Deploy)
 

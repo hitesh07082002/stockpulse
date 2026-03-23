@@ -50,6 +50,56 @@ test('valuation tab shows annualized return framing', async ({ page }) => {
   await expect(page.getByText(/Total 5-year return:/i)).toBeVisible();
 });
 
+test('AI tab streams an answer and shows stream metadata', async ({ page }) => {
+  await page.route('**/api/companies/AAPL/copilot/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+      },
+      body: [
+        'data: {"type":"meta","company_name":"Apple Inc.","quote_freshness":"Quote updated 5m ago","coverage_summary":"Coverage: 10 annual, 8 quarterly","remaining_quota":8}\n\n',
+        'data: {"type":"text","content":"Apple keeps compounding with stable margins."}\n\n',
+        'data: {"type":"done","remaining_quota":8}\n\n',
+      ].join(''),
+    });
+  });
+
+  await page.goto('/stock/AAPL');
+  await page.getByRole('tab', { name: 'AI' }).click();
+  await page.getByRole('button', { name: 'Summarize key financial trends' }).click();
+
+  await expect(page.getByText(/Apple keeps compounding with stable margins\./i)).toBeVisible();
+  await expect(page.getByText(/8 left today/i)).toBeVisible();
+  await expect(page.getByText(/Coverage: 10 annual, 8 quarterly/i)).toBeVisible();
+});
+
+test('AI tab shows the upgrade CTA when anonymous quota is exhausted', async ({ page }) => {
+  await page.route('**/api/companies/AAPL/copilot/**', async (route) => {
+    await route.fulfill({
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Daily limit reached',
+        message: 'You have used all 10 free prompts today.',
+        code: 'quota_exhausted',
+        limit: 10,
+        used: 10,
+      }),
+    });
+  });
+
+  await page.goto('/stock/AAPL');
+  await page.getByRole('tab', { name: 'AI' }).click();
+  await page.getByRole('button', { name: 'Compare margins to sector average' }).click();
+
+  await expect(page.getByText(/used all 10 free prompts today/i)).toBeVisible();
+  await page.getByRole('button', { name: /sign in for 50 daily prompts/i }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
 test('screener filters into a company detail flow', async ({ page }) => {
   await page.goto('/screener');
 

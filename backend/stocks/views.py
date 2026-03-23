@@ -1,16 +1,14 @@
-import json
 from datetime import date
 
 from django.conf import settings
-from django.http import StreamingHttpResponse, JsonResponse
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework import generics, filters
 from rest_framework.decorators import api_view
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
+from .copilot import CopilotRequestError, build_copilot_response
 from .models import Company, FinancialFact, MetricSnapshot
 from .pricing import PriceCacheUnavailable, get_or_refresh_price_cache
 from .serializers import (
@@ -568,91 +566,9 @@ def _build_financial_context(company):
     return "\n".join(line for line in lines if line)
 
 
-@csrf_exempt
+@api_view(['POST'])
 def chat_view(request, ticker):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-
     try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    message = body.get('message', '').strip()
-    if not message:
-        return JsonResponse({'error': 'Message is required'}, status=400)
-
-    if len(message) > 1000:
-        return JsonResponse({'error': 'Message too long (max 1000 characters)'}, status=400)
-
-    ticker = ticker.upper()
-    try:
-        company = Company.objects.get(ticker=ticker)
-    except Company.DoesNotExist:
-        return JsonResponse({'error': f'Company {ticker} not found'}, status=404)
-
-    # Rate limiting
-    rate_key = _get_ai_rate_limit_key(request)
-    allowed, count, limit = _check_daily_limit(rate_key)
-
-    if not allowed:
-        is_anonymous = rate_key.startswith("ip:")
-        if is_anonymous:
-            return JsonResponse({
-                'error': 'Daily limit reached',
-                'message': f'You\'ve used {limit}/{limit} free queries today. Sign in for {settings.AI_DAILY_LIMIT_AUTHENTICATED} more.',
-                'limit': limit,
-                'used': count,
-            }, status=429)
-        else:
-            return JsonResponse({
-                'error': 'Daily limit reached',
-                'message': f'You\'ve used {limit}/{limit} queries today. Limit resets at midnight UTC.',
-                'limit': limit,
-                'used': count,
-            }, status=429)
-
-    if not settings.ANTHROPIC_API_KEY:
-        return JsonResponse({
-            'error': 'AI service not configured',
-            'message': 'The AI copilot is not available. Please configure the ANTHROPIC_API_KEY.',
-        }, status=503)
-
-    # Build context
-    financial_context = _build_financial_context(company)
-
-    system_prompt = (
-        "You are a financial analyst assistant for StockPulse, an AI-powered stock analysis platform. "
-        "You analyze the structured financial data provided below and answer questions about the company. "
-        "Always cite specific numbers from the data. Be precise and quantitative. "
-        "You are interpreting numerical trends from normalized SEC filing data — not quoting filing text directly. "
-        "If the data doesn't contain enough information to answer, say so honestly. "
-        "Keep responses concise but thorough. Use bullet points for comparisons. "
-        "Format currency values with appropriate units (millions, billions).\n\n"
-        f"--- FINANCIAL DATA ---\n{financial_context}\n--- END DATA ---"
-    )
-
-    import anthropic
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-    def generate():
-        try:
-            with client.messages.stream(
-                model="claude-sonnet-4-20250514",
-                max_tokens=settings.AI_MAX_TOKENS,
-                system=system_prompt,
-                messages=[{"role": "user", "content": message}],
-            ) as stream:
-                for text in stream.text_stream:
-                    yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
-
-            _increment_daily_count(rate_key)
-            yield f"data: {json.dumps({'type': 'done', 'used': count + 1, 'limit': limit})}\n\n"
-
-        except anthropic.APIError as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': 'AI service temporarily unavailable. Please try again.'})}\n\n"
-
-    response = StreamingHttpResponse(generate(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
-    response['X-Accel-Buffering'] = 'no'
-    return response
+        return build_copilot_response(request, ticker)
+    except CopilotRequestError as exc:
+        return exc.to_response()

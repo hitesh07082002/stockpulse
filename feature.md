@@ -166,9 +166,12 @@ Purpose:
 
 Includes:
 - per-company copilot
+- bounded follow-up questions from the active browser session
 - SSE streaming responses
 - grounded answers from structured StockPulse data
 - honesty about sparse or weak coverage
+- explicit quota, budget, timeout, and provider-unavailable states
+- anonymous quota exhaustion -> sign-in upgrade path
 
 Limits:
 - anonymous: 10 prompts/day
