@@ -85,6 +85,7 @@ M1, M2, and M3 are complete and verified.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
+- coverage entry point: `make coverage`
 - backend pytest scaffold
 - frontend Vitest scaffold
 - Playwright smoke scaffold
@@ -98,6 +99,7 @@ Already in place:
 Latest verification pass:
 - `make lint`
 - `make test`
+- `make coverage`
 - `make build`
 - `make qa-smoke`
 
