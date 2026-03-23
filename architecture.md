@@ -175,8 +175,9 @@ user prompt
    ├─ enforce burst limit
    ├─ reserve daily AI budget
    ├─ assemble company context
+   ├─ render provider-specific prompt/input at the edge
    ▼
-Anthropic model call (streaming)
+provider adapter call (streaming)
    │
    ├─ reconcile actual spend
    └─ stream answer to UI
@@ -188,6 +189,18 @@ Context inputs:
 - latest `MetricSnapshot`
 - 10 annual periods
 - 8 recent quarters
+- explicit coverage/sparsity signals
+
+Provider contract:
+- Anthropic is the production-default provider
+- Gemini can be used in local/dev/staging through the same adapter seam
+- Gemini copilot requests default to a zero thinking budget on this grounded V1 path so hidden reasoning does not consume the visible answer budget
+- the frontend only sees canonical SSE JSON frames: `meta`, `text`, `error`, `done`
+- provider-native event formats stay behind the adapter boundary
+
+Conversation scope:
+- bounded follow-up context comes from the active browser session
+- no server-side chat persistence or saved conversations in V1
 
 What it does not use:
 - raw filing text

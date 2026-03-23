@@ -61,7 +61,7 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 5.3 DONE M3 — Public Read APIs and Stock Detail Shell: landing, company detail, overview, and Financials hero
 - 5.4 DONE M4 — Price, Valuation, and Screener: cache-backed price ranges with stale fallback, guarded Qualtrim-style DCF, and a focused `MetricSnapshot` screener
 - 5.5 DONE M5 — Authentication: secure cookies, `/api/auth/session/` bootstrap, Google-first auth flow, frontend auth context, and shell auth modal
-- 5.6 PENDING M6 — AI Copilot: grounded context assembly, quota enforcement, spend enforcement, SSE UI
+- 5.6 DONE M6 — AI Copilot: grounded structured context, bounded follow-up turns, provider seam, quota + spend enforcement, and canonical SSE UI
 - 5.7 PENDING M7 — Hardening and Deploy: scheduled worker, production config, accessibility, performance, docs polish
 
 ## 6.0 Verification and Launch Bar
@@ -70,11 +70,11 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 6.1 DONE `make lint`, `make test`, and `make build` pass on the current rewrite branch.
 - 6.2 DONE Playwright smoke covers landing -> search -> stock detail -> Financials tab rendering canonical data.
 - 6.3 DONE Price range selection and screener filter-to-company flows pass Playwright smoke.
-- 6.4 PENDING Google sign-in and anonymous-to-authenticated AI upgrade flows must pass end to end.
+- 6.4 DONE Google sign-in and anonymous-to-authenticated AI upgrade flows pass end to end.
 - 6.5 DONE Normalization fixtures prove deterministic handling of amendments, duplicates, mixed units, and derived quarters.
 - 6.6 DONE M2 local/dev data was reset after the schema cut and rebuilt from the canonical pipeline without compatibility glue.
 - 6.7 PENDING Scheduled-worker SLAs must hold under normal V1 load.
-- 6.7 DONE A documented S&P 500 coverage audit exists at [`docs/audits/sp500-launch-coverage-2026-03-22.md`](./docs/audits/sp500-launch-coverage-2026-03-22.md), passes the `95%` gate, and treats `gross_profit` and `gross_margin` as conditional metrics based on retained SEC payload applicability.
+- 6.8 DONE A documented S&P 500 coverage audit exists at [`docs/audits/sp500-launch-coverage-2026-03-22.md`](./docs/audits/sp500-launch-coverage-2026-03-22.md), passes the `95%` gate, and treats `gross_profit` and `gross_margin` as conditional metrics based on retained SEC payload applicability.
 
 ## 7.0 Source of Truth
 

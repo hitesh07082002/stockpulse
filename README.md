@@ -81,7 +81,7 @@ Do not jump ahead to AI polish or peripheral product features before the Financi
 
 ## Milestone Progress
 
-M1, M2, M3, M4, and M5 are complete and verified.
+M1, M2, M3, M4, M5, and M6 are complete and verified.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
@@ -102,6 +102,12 @@ Already in place:
 - secure cookie auth with `/api/auth/session/`, register/login/refresh/logout, and backend-managed Google redirect/callback
 - Google-first auth modal in the shell, with email/password fallback and visible logged-in state in the header + AI tab
 - M5 API coverage for register/login/refresh/logout and Google auto-linking, plus smoke coverage for register/login/logout and Google sign-in
+- structured AI context built from company metadata, freshness, snapshot, 10 annual periods, 8 recent quarters, and explicit coverage signals
+- canonical SSE copilot stream events: `meta`, `text`, `error`, and `done`
+- signed anonymous AI identity with 10/day anonymous quota, 50/day authenticated quota, 3/minute IP burst limit, and database-backed daily budget reserve/reconcile
+- bounded follow-up memory from the active client session without saved chats
+- provider seam with Anthropic as the production default and Gemini available for local/dev/staging
+- M6 API coverage for copilot quota/budget/failure semantics, provider normalization, frontend AI tab state coverage, and smoke coverage for prompt submit plus anonymous -> sign-in upgrade flow
 
 Latest verification pass:
 - `make lint`
@@ -110,7 +116,7 @@ Latest verification pass:
 - `make qa-smoke`
 
 Next up:
-- M6 AI copilot is next
+- M7 hardening and deploy
 
 Current data layer status:
 - M2 ingestion and canonical data is complete
@@ -138,6 +144,14 @@ Local development now assumes:
 Google sign-in in local dev:
 - with real Google OAuth credentials configured, the backend-managed redirect/callback flow is used
 - without Google credentials in `DEBUG`, `/api/auth/google/start/` falls back to a debug-only mock consent page so local smoke and manual auth testing stay deterministic
+
+AI provider config in local dev:
+- set `GEMINI_API_KEY` to use Gemini in local `DEBUG`
+- optional: set `AI_PROVIDER=gemini` explicitly; otherwise `DEBUG` auto-selects Gemini when `GEMINI_API_KEY` is present
+- default local Gemini model is `GEMINI_MODEL=gemini-2.5-flash`
+- grounded Gemini copilot requests default to `GEMINI_THINKING_BUDGET=0` so hidden reasoning does not burn the response budget on this structured Q&A path
+- Anthropic remains the production-default provider and can be selected with `AI_PROVIDER=anthropic`
+- AI budget and pricing are env-driven: `AI_DAILY_BUDGET_USD`, `GEMINI_INPUT_COST_PER_MTOK_USD`, `GEMINI_OUTPUT_COST_PER_MTOK_USD`, `ANTHROPIC_INPUT_COST_PER_MTOK_USD`, `ANTHROPIC_OUTPUT_COST_PER_MTOK_USD`
 
 If you need a different backend origin for local work, set `VITE_API_BASE_URL`.
 

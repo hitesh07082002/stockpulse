@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from decimal import Decimal
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -178,11 +179,31 @@ GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 GOOGLE_OAUTH_REDIRECT_URI = os.getenv('GOOGLE_OAUTH_REDIRECT_URI', '')
 GOOGLE_OAUTH_MOCK_EMAIL = os.getenv('GOOGLE_OAUTH_MOCK_EMAIL', 'demo.user@stockpulse.dev')
 
-# Anthropic
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-AI_MAX_TOKENS = 1024
+# AI providers
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+_default_ai_provider = 'gemini' if DEBUG and GEMINI_API_KEY and not os.getenv('AI_PROVIDER') else 'anthropic'
+AI_PROVIDER = os.getenv('AI_PROVIDER', _default_ai_provider).strip().lower()
+AI_MAX_TOKENS = int(os.getenv('AI_MAX_TOKENS', '1024'))
+AI_PROVIDER_TIMEOUT_SECONDS = int(os.getenv('AI_PROVIDER_TIMEOUT_SECONDS', '45'))
 AI_DAILY_LIMIT_ANONYMOUS = 10
 AI_DAILY_LIMIT_AUTHENTICATED = 50
+AI_DAILY_BUDGET_USD = Decimal(os.getenv('AI_DAILY_BUDGET_USD', '5.00'))
+AI_BURST_LIMIT_PER_MINUTE = int(os.getenv('AI_BURST_LIMIT_PER_MINUTE', '3'))
+AI_MAX_HISTORY_TURNS = int(os.getenv('AI_MAX_HISTORY_TURNS', '6'))
+AI_CONTEXT_ANNUAL_PERIODS = int(os.getenv('AI_CONTEXT_ANNUAL_PERIODS', '10'))
+AI_CONTEXT_QUARTERLY_PERIODS = int(os.getenv('AI_CONTEXT_QUARTERLY_PERIODS', '8'))
+AI_ANON_COOKIE = os.getenv('AI_ANON_COOKIE', 'anon_ai_id')
+AI_ANON_COOKIE_MAX_AGE_DAYS = int(os.getenv('AI_ANON_COOKIE_MAX_AGE_DAYS', '30'))
+
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+ANTHROPIC_INPUT_COST_PER_MTOK_USD = Decimal(os.getenv('ANTHROPIC_INPUT_COST_PER_MTOK_USD', '3.00'))
+ANTHROPIC_OUTPUT_COST_PER_MTOK_USD = Decimal(os.getenv('ANTHROPIC_OUTPUT_COST_PER_MTOK_USD', '15.00'))
+
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+GEMINI_THINKING_BUDGET = int(os.getenv('GEMINI_THINKING_BUDGET', '0'))
+GEMINI_INPUT_COST_PER_MTOK_USD = Decimal(os.getenv('GEMINI_INPUT_COST_PER_MTOK_USD', '0.30'))
+GEMINI_OUTPUT_COST_PER_MTOK_USD = Decimal(os.getenv('GEMINI_OUTPUT_COST_PER_MTOK_USD', '2.50'))
 
 # SEC EDGAR
 SEC_USER_AGENT = 'StockPulse hitesh07082002@gmail.com'

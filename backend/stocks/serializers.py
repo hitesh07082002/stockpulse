@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 from .models import Company, FinancialFact, MetricSnapshot
 
@@ -122,4 +123,33 @@ class DCFInputSerializer(serializers.Serializer):
 
 
 class ChatMessageSerializer(serializers.Serializer):
-    message = serializers.CharField(max_length=1000)
+    class HistoryTurnSerializer(serializers.Serializer):
+        role = serializers.ChoiceField(choices=["user", "assistant", "ai"])
+        content = serializers.CharField(max_length=4000, trim_whitespace=True)
+
+        def validate_role(self, value):
+            return "assistant" if value == "ai" else value
+
+        def validate_content(self, value):
+            content = value.strip()
+            if not content:
+                raise serializers.ValidationError("History content cannot be blank.")
+            return content
+
+    message = serializers.CharField(max_length=1000, trim_whitespace=True)
+    history = HistoryTurnSerializer(many=True, required=False, allow_empty=True)
+
+    def validate_message(self, value):
+        message = value.strip()
+        if not message:
+            raise serializers.ValidationError("Message is required.")
+        return message
+
+    def validate_history(self, value):
+        max_turns = getattr(settings, "AI_MAX_HISTORY_TURNS", 6)
+        max_messages = max_turns * 2
+        if len(value) > max_messages:
+            raise serializers.ValidationError(
+                f"History is limited to the most recent {max_turns} turns."
+            )
+        return value

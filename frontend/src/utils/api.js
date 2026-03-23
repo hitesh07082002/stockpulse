@@ -1,4 +1,6 @@
 const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+export const MAX_COPILOT_HISTORY_TURNS = 6;
+export const MAX_COPILOT_HISTORY_MESSAGES = MAX_COPILOT_HISTORY_TURNS * 2;
 
 function resolveBaseURL() {
   if (RAW_BASE_URL.startsWith('http://') || RAW_BASE_URL.startsWith('https://')) {
@@ -63,6 +65,127 @@ function getCSRFToken() {
 
   const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : '';
+}
+
+export function normalizeCopilotHistory(history) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+
+      const role = entry.role === 'assistant' || entry.role === 'user' ? entry.role : null;
+      const content = typeof entry.content === 'string'
+        ? entry.content.trim()
+        : typeof entry.content === 'number'
+          ? String(entry.content).trim()
+          : '';
+
+      if (!role || !content) {
+        return null;
+      }
+
+      return { role, content };
+    })
+    .filter(Boolean)
+    .slice(-MAX_COPILOT_HISTORY_MESSAGES);
+}
+
+function extractRemainingQuota(payload) {
+  const candidates = [
+    payload?.remaining_quota,
+    payload?.remaining_daily,
+    payload?.remainingQuota,
+    payload?.remaining,
+    payload?.quota_remaining,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null || candidate === '') {
+      continue;
+    }
+
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+export function normalizeCopilotStreamEvent(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (payload.type === 'meta') {
+    return {
+      ...payload,
+      type: 'meta',
+      remainingQuota: extractRemainingQuota(payload),
+    };
+  }
+
+  if (payload.type === 'text') {
+    return {
+      type: 'text',
+      content: String(payload.content ?? payload.text ?? payload.delta ?? ''),
+    };
+  }
+
+  if (payload.type === 'error') {
+    return {
+      ...payload,
+      type: 'error',
+      message: String(payload.message ?? payload.content ?? payload.error ?? 'Stream error'),
+      code: payload.code ?? payload.error_code ?? null,
+      remainingQuota: extractRemainingQuota(payload),
+    };
+  }
+
+  if (payload.type === 'done') {
+    return {
+      ...payload,
+      type: 'done',
+      remainingQuota: extractRemainingQuota(payload),
+    };
+  }
+
+  if (typeof payload.content === 'string' || typeof payload.text === 'string' || typeof payload.delta === 'string') {
+    return {
+      type: 'text',
+      content: String(payload.content ?? payload.text ?? payload.delta ?? ''),
+    };
+  }
+
+  return null;
+}
+
+function parseSseRecord(rawLines) {
+  if (!rawLines.length) {
+    return null;
+  }
+
+  const data = rawLines
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).replace(/^\s/, ''))
+    .join('\n')
+    .trim();
+
+  if (!data) {
+    return null;
+  }
+
+  try {
+    return normalizeCopilotStreamEvent(JSON.parse(data));
+  } catch {
+    return null;
+  }
 }
 
 async function get(path, params) {
@@ -155,7 +278,7 @@ export function startGoogleAuth(nextPath) {
   }
 }
 
-export async function* sendChatMessage(ticker, message) {
+export async function* sendChatMessage(ticker, message, history = []) {
   const response = await fetch(buildURL(`/companies/${ticker}/copilot/`), {
     method: 'POST',
     credentials: 'include',
@@ -163,43 +286,116 @@ export async function* sendChatMessage(ticker, message) {
       'Content-Type': 'application/json',
       ...(getCSRFToken() ? { 'X-CSRFToken': getCSRFToken() } : {}),
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({
+      message,
+      history: normalizeCopilotHistory(history),
+    }),
   });
 
   if (!response.ok) {
     throw await buildApiError(response);
   }
 
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    throw new Error('Streaming response unavailable.');
+  }
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let eventLines = [];
+  let sawTerminalEvent = false;
+
+  function flushEventLines() {
+    const event = parseSseRecord(eventLines);
+    eventLines = [];
+    return event;
+  }
+
+  function processBufferChunk(chunk) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.replace(/\r/g, '').split('\n');
+    buffer = lines.pop() || '';
+
+    const events = [];
+    for (const line of lines) {
+      if (!line) {
+        const event = flushEventLines();
+        if (event) {
+          events.push(event);
+        }
+        continue;
+      }
+
+      if (line.startsWith('data:')) {
+        eventLines.push(line);
+      }
+    }
+
+    return events;
+  }
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      break;
+    }
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
+    const events = processBufferChunk(value);
+    for (const event of events) {
+      if (event.type === 'error') {
+        sawTerminalEvent = true;
+        yield event;
+        return;
+      }
+
+      if (event.type === 'done') {
+        sawTerminalEvent = true;
+        yield event;
+        return;
+      }
+
+      yield event;
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer) {
+    const lines = buffer.replace(/\r/g, '').split('\n');
     buffer = lines.pop() || '';
-
+    if (buffer) {
+      if (buffer.startsWith('data:')) {
+        eventLines.push(buffer);
+      }
+      buffer = '';
+    }
     for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-
-      const json = line.slice(6);
-
-      try {
-        const parsed = JSON.parse(json);
-
-        if (parsed.type === 'text') {
-          yield parsed.content;
-        } else if (parsed.type === 'done') {
-          return;
-        } else if (parsed.type === 'error') {
-          throw new Error(parsed.content || 'Stream error');
+      if (!line) {
+        const event = flushEventLines();
+        if (event) {
+          if (event.type === 'error' || event.type === 'done') {
+            sawTerminalEvent = true;
+          }
+          yield event;
         }
-      } catch {
         continue;
       }
+
+      if (line.startsWith('data:')) {
+        eventLines.push(line);
+      }
     }
+  }
+
+  const finalEvent = flushEventLines();
+  if (finalEvent) {
+    if (finalEvent.type === 'error' || finalEvent.type === 'done') {
+      sawTerminalEvent = true;
+    }
+    yield finalEvent;
+  }
+
+  if (!sawTerminalEvent) {
+    throw new Error('Stream ended unexpectedly.');
   }
 }

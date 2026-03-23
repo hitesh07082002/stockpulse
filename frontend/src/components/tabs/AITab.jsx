@@ -1,6 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { sendChatMessage } from '../../utils/api';
+import {
+  normalizeCopilotHistory,
+  sendChatMessage,
+} from '../../utils/api';
 import { useAuth } from '../auth/useAuth';
 
 /* ────────────────────────────────────────────
@@ -28,9 +31,13 @@ function AITab({ ticker, company }) {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  const [errorStatus, setErrorStatus] = useState(null);
+  const [streamMeta, setStreamMeta] = useState(null);
+  const [remainingQuota, setRemainingQuota] = useState(null);
 
   const messageEndRef = useRef(null);
-  const messageAreaRef = useRef(null);
+  const messageIdRef = useRef(0);
 
   /* Auto-scroll to bottom on new messages / streaming updates */
   useEffect(() => {
@@ -39,53 +46,175 @@ function AITab({ ticker, company }) {
     }
   }, [messages]);
 
+  function nextMessageId() {
+    messageIdRef.current += 1;
+    return `${Date.now()}-${messageIdRef.current}`;
+  }
+
+  function createMessage(role, content, status = 'complete') {
+    return {
+      id: nextMessageId(),
+      role,
+      content,
+      status,
+    };
+  }
+
+  function updateLastAssistantMessage(updater) {
+    setMessages((prev) => {
+      if (!prev.length) {
+        return prev;
+      }
+
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      const lastMessage = updated[lastIndex];
+      if (!lastMessage || lastMessage.role !== 'assistant') {
+        return prev;
+      }
+
+      updated[lastIndex] = updater(lastMessage);
+      return updated;
+    });
+  }
+
+  function finalizeAssistantMessage() {
+    updateLastAssistantMessage((message) => ({
+      ...message,
+      status: 'complete',
+    }));
+  }
+
+  function removeEmptyAssistantPlaceholder() {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === 'assistant' && !last.content) {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+  }
+
+  function getStreamRemainingQuota(payload) {
+    const candidates = [
+      payload?.remainingQuota,
+      payload?.remaining_quota,
+      payload?.remaining_daily,
+      payload?.remaining,
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate === null || candidate === '') {
+        continue;
+      }
+
+      const value = Number(candidate);
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+
+    if (payload?.limit !== undefined && payload?.used !== undefined) {
+      const limit = Number(payload.limit);
+      const used = Number(payload.used);
+      if (Number.isFinite(limit) && Number.isFinite(used)) {
+        return Math.max(limit - used, 0);
+      }
+    }
+
+    return null;
+  }
+
+  function buildConversationHistory() {
+    return normalizeCopilotHistory(messages);
+  }
+
   /* ---- Send handler ---- */
   async function handleSend(messageText) {
     const text = (messageText || '').trim();
     if (!text || isStreaming) return;
 
     setError('');
+    setErrorCode('');
+    setErrorStatus(null);
+    setStreamMeta(null);
     setInput('');
 
-    /* Append user message and an empty AI placeholder */
+    const history = buildConversationHistory();
+
+    /* Append user message and an empty assistant placeholder */
     setMessages((prev) => [
       ...prev,
-      { role: 'user', content: text },
-      { role: 'ai', content: '' },
+      createMessage('user', text),
+      createMessage('assistant', '', 'streaming'),
     ]);
 
     setIsStreaming(true);
 
     try {
-      const stream = sendChatMessage(ticker, text);
-      for await (const chunk of stream) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            content: updated[lastIdx].content + chunk,
-          };
-          return updated;
-        });
+      const stream = sendChatMessage(ticker, text, history);
+      for await (const event of stream) {
+        if (!event || typeof event !== 'object') {
+          continue;
+        }
+
+        if (event.type === 'meta') {
+          setStreamMeta(event);
+          const streamRemaining = getStreamRemainingQuota(event);
+          if (streamRemaining !== null) {
+            setRemainingQuota(streamRemaining);
+          }
+          continue;
+        }
+
+        if (event.type === 'text') {
+          if (!event.content) {
+            continue;
+          }
+
+          updateLastAssistantMessage((message) => ({
+            ...message,
+            content: `${message.content}${event.content}`,
+          }));
+          continue;
+        }
+
+        if (event.type === 'done') {
+          const streamRemaining = getStreamRemainingQuota(event);
+          if (streamRemaining !== null) {
+            setRemainingQuota(streamRemaining);
+          }
+          finalizeAssistantMessage();
+          return;
+        }
+
+        if (event.type === 'error') {
+          setError(event.message || 'Something went wrong. Please try again.');
+          setErrorCode(event.code || '');
+          setErrorStatus(event.status || null);
+          const streamRemaining = getStreamRemainingQuota(event);
+          if (streamRemaining !== null) {
+            setRemainingQuota(streamRemaining);
+          }
+          finalizeAssistantMessage();
+          return;
+        }
       }
     } catch (err) {
-      if (err.message && /limit/i.test(err.message)) {
-        setError(err.message);
-      } else {
-        setError('Something went wrong. Please try again.');
+      const payload = err?.payload || {};
+      const streamRemaining = getStreamRemainingQuota(payload);
+      if (streamRemaining !== null) {
+        setRemainingQuota(streamRemaining);
       }
-      /* Remove the empty AI placeholder if nothing was streamed */
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'ai' && last.content === '') {
-          return prev.slice(0, -1);
-        }
-        return prev;
-      });
-    }
 
-    setIsStreaming(false);
+      const fallbackMessage = err?.message || 'Something went wrong. Please try again.';
+      setError(fallbackMessage);
+      setErrorCode(payload?.code || (err?.status === 429 ? 'quota_exhausted' : ''));
+      setErrorStatus(err?.status || null);
+      removeEmptyAssistantPlaceholder();
+    } finally {
+      setIsStreaming(false);
+    }
   }
 
   /* ---- Input key handler ---- */
@@ -103,20 +232,51 @@ function AITab({ ticker, company }) {
   const anonymousLimit = limits?.anonymous_daily || 10;
   const authenticatedLimit = limits?.authenticated_daily || 50;
   const currentLimit = isAuthenticated ? authenticatedLimit : anonymousLimit;
-  const shouldShowUpgradePrompt = !isAuthenticated && /limit/i.test(error);
+  const hasQuotaSignal = remainingQuota !== null;
+  const quotaLabel = hasQuotaSignal
+    ? `${remainingQuota} left today`
+    : null;
+  const shouldShowUpgradePrompt = !isAuthenticated && (
+    errorStatus === 429 || /limit|quota/i.test(`${errorCode} ${error}`)
+  );
+  const metaSummaryParts = [];
+
+  if (streamMeta?.company_name) {
+    metaSummaryParts.push(streamMeta.company_name);
+  }
+
+  if (streamMeta?.quote_freshness) {
+    metaSummaryParts.push(streamMeta.quote_freshness);
+  }
+
+  if (streamMeta?.coverage_summary) {
+    metaSummaryParts.push(streamMeta.coverage_summary);
+  }
 
   return (
     <div className="flex flex-col h-[600px] bg-surface border border-border rounded-lg overflow-hidden">
       {/* ===== Header ===== */}
-      <div className="px-4 py-3 border-b border-border flex justify-between items-center">
-        <span className="font-display text-lg font-semibold text-text-primary">
-          Ask about {companyName}'s financials
-        </span>
-        <span className="text-xs font-data text-text-tertiary bg-elevated px-2 py-1 rounded-full">
-          {isAuthenticated
-            ? `Signed in: ${currentLimit}/day`
-            : `Free: ${anonymousLimit}/day · Sign in: ${authenticatedLimit}/day`}
-        </span>
+      <div className="px-4 py-3 border-b border-border flex flex-col gap-2">
+        <div className="flex justify-between items-start gap-3">
+          <span className="font-display text-lg font-semibold text-text-primary">
+            Ask about {companyName}'s financials
+          </span>
+          <span className="text-xs font-data text-text-tertiary bg-elevated px-2 py-1 rounded-full whitespace-nowrap">
+            {isAuthenticated
+              ? `Signed in: ${currentLimit}/day`
+              : `Free: ${anonymousLimit}/day · Sign in: ${authenticatedLimit}/day`}
+            {quotaLabel ? ` · ${quotaLabel}` : ''}
+          </span>
+        </div>
+        {metaSummaryParts.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-[11px] font-data text-text-tertiary">
+            {metaSummaryParts.map((part) => (
+              <span key={part} className="rounded-full border border-border bg-elevated px-2 py-1">
+                {part}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ===== Suggested prompts (when empty) ===== */}
@@ -152,12 +312,12 @@ function AITab({ ticker, company }) {
       {hasMessages && (
         <div
           className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col min-h-0"
-          ref={messageAreaRef}
         >
           {messages.map((msg, idx) => {
             const isUser = msg.role === 'user';
-            const isLastAI =
-              msg.role === 'ai' && idx === messages.length - 1 && isStreaming;
+            const isAssistant = msg.role === 'assistant';
+            const isStreamingAssistant =
+              isAssistant && idx === messages.length - 1 && isStreaming;
 
             return (
               <div
@@ -168,7 +328,7 @@ function AITab({ ticker, company }) {
               >
                 <div
                   className={
-                    isUser
+                  isUser
                       ? 'bg-accent-muted rounded-2xl px-4 py-2 ml-auto max-w-[80%] text-text-primary'
                       : 'bg-elevated rounded-2xl px-4 py-3 mr-auto max-w-[80%] text-text-primary'
                   }
@@ -177,8 +337,14 @@ function AITab({ ticker, company }) {
                     msg.content
                   ) : (
                     <div className="leading-relaxed">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      {isLastAI && (
+                      {msg.content ? (
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      ) : isStreamingAssistant ? (
+                        <span className="text-text-tertiary">Thinking...</span>
+                      ) : (
+                        <span className="text-text-tertiary">No response returned.</span>
+                      )}
+                      {isStreamingAssistant && msg.content && (
                         <span className="inline-block w-0.5 h-4 bg-accent ml-1 animate-[blink_1s_infinite]" />
                       )}
                     </div>

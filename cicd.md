@@ -135,6 +135,18 @@ Recommended environment chain:
 
 If preview environments are too heavy early on, staging plus production is still acceptable, but production should remain a manual promotion step.
 
+Environment secrets now required for M6+:
+- `SECRET_KEY`
+- `DATABASE_URL`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI`
+- `AI_PROVIDER`
+- `ANTHROPIC_API_KEY` for the production-default provider, or `GEMINI_API_KEY` for local/dev/staging where Gemini is used
+- `ANTHROPIC_MODEL` or `GEMINI_MODEL` if overriding defaults
+- `GEMINI_THINKING_BUDGET` if a nonzero reasoning budget is ever required for local/dev/staging experiments; default grounded copilot behavior is `0`
+- `AI_DAILY_BUDGET_USD` and any provider pricing overrides used for budget accounting
+
 ## 4.4 Database Migration Strategy
 
 Use expand-contract migrations:
