@@ -4,9 +4,9 @@ AI-powered stock research platform built with React, Django, and PostgreSQL.
 
 ## Current Status
 
-StockPulse is in a **scratch-build rewrite** phase.
+StockPulse is complete through **M6** on `rewrite/v1`, and the **M7 deployment baseline** is now implemented.
 
-The planning docs are now the source of truth. The existing implementation in [`backend`](./backend) and [`frontend`](./frontend) is legacy reference material, not the architectural foundation of the rebuild.
+The rewrite branch is the source of truth. The next major step is the first live production rollout using the deployment assets in [`deploy/`](./deploy).
 
 ## Start Here
 
@@ -81,7 +81,7 @@ Do not jump ahead to AI polish or peripheral product features before the Financi
 
 ## Milestone Progress
 
-M1, M2, M3, M4, M5, and M6 are complete and verified.
+M1, M2, M3, M4, M5, and M6 are complete and verified. M7 deployment infrastructure is in place, with live production verification still pending.
 
 Already in place:
 - root entry points: `make dev`, `make lint`, `make test`, `make build`
@@ -108,6 +108,12 @@ Already in place:
 - bounded follow-up memory from the active client session without saved chats
 - provider seam with Anthropic as the production default and Gemini available for local/dev/staging
 - M6 API coverage for copilot quota/failure semantics, provider normalization, frontend AI tab state coverage, and smoke coverage for prompt submit plus anonymous -> sign-in upgrade flow
+- production dependencies for Gunicorn, WhiteNoise, and `dj-database-url`
+- public health endpoint at `/api/health/`
+- Django-served React SPA fallback for deep links like `/stock/AAPL`
+- multi-stage Docker image build plus production and local Docker Compose files
+- GitHub Actions deployment workflow that builds, pushes to GHCR, SSHes into the server, runs migrations, and checks `/api/health/`
+- server-side deployment assets in [`deploy/`](./deploy): setup script, nginx config, cron schedule, and beginner-friendly deployment guide
 
 Latest verification pass:
 - `make lint`
@@ -161,12 +167,30 @@ If you need a different backend origin for local work, set `VITE_API_BASE_URL`.
 The intended delivery model is:
 - required PR checks on GitHub Actions
 - protected `main`
-- staging auto-deploy
-- production manual promotion
+- direct production deploy from `main`
 - automated migrations
-- post-deploy smoke and rollback path
+- health verification in the deploy pipeline
+- documented manual rollback path
 
 Details live in [`cicd.md`](./cicd.md).
+
+## Deployment Architecture
+
+Current V1 production target:
+
+```text
+E2E Networks node
+├── nginx on the host (TLS + reverse proxy)
+├── Docker Compose
+│   ├── web: Django + Gunicorn + WhiteNoise
+│   └── db: PostgreSQL 16
+└── host cron
+    ├── update_prices + compute_snapshots every 15 minutes
+    ├── ingest_financials + compute_snapshots nightly
+    └── ingest_companies + enrich_company_metadata weekly
+```
+
+The operator runbook lives in [`deploy/DEPLOYMENT_GUIDE.md`](./deploy/DEPLOYMENT_GUIDE.md).
 
 ## Notes for New Agent Sessions
 
@@ -174,4 +198,4 @@ Before changing behavior:
 - update the matching docs in the same turn
 - preserve the rewrite strategy in [`plan.md`](./plan.md)
 - treat SEC normalization correctness as the top engineering priority
-- keep AI grounded only in structured StockPulse data
+- keep AI grounded primarily in structured StockPulse data, using general financial knowledge only as explanatory context
