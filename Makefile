@@ -1,4 +1,4 @@
-.PHONY: help dev up down lint lint-backend lint-frontend test test-backend test-frontend coverage coverage-backend coverage-frontend build build-frontend qa qa-smoke _clean
+.PHONY: help dev up down lint lint-backend lint-frontend test test-backend test-frontend coverage coverage-backend coverage-frontend build build-frontend qa qa-smoke docker-build docker-up docker-down docker-logs docker-shell _clean
 
 PYTHON ?= venv/bin/python
 PIP ?= $(PYTHON) -m pip
@@ -14,6 +14,11 @@ help:
 	@printf "  make build       Build the frontend bundle\n"
 	@printf "  make qa          Run full Playwright suite\n"
 	@printf "  make qa-smoke    Run Playwright smoke suite\n"
+	@printf "  make docker-build Build the local Docker image\n"
+	@printf "  make docker-up   Start the local Docker stack\n"
+	@printf "  make docker-down Stop the local Docker stack\n"
+	@printf "  make docker-logs Tail Docker logs for the web service\n"
+	@printf "  make docker-shell Open a shell in the web container\n"
 	@printf "  make _clean      Remove local build/test artifacts\n"
 
 dev:
@@ -62,6 +67,21 @@ qa:
 
 qa-smoke:
 	$(FRONTEND_NPM) run test:e2e:smoke
+
+docker-build:
+	docker build -t stockpulse:dev .
+
+docker-up:
+	docker compose -f docker-compose.dev.yml up -d --build
+
+docker-down:
+	docker compose -f docker-compose.dev.yml down
+
+docker-logs:
+	docker compose -f docker-compose.dev.yml logs -f web
+
+docker-shell:
+	docker compose -f docker-compose.dev.yml exec web sh
 
 _clean:
 	@python3 -c "from pathlib import Path; import shutil; paths = ['frontend/dist', '.pytest_cache', 'frontend/.vitest', 'frontend/playwright-report', 'frontend/test-results', 'frontend/coverage', 'backend/htmlcov', 'backend/coverage.xml']; [shutil.rmtree(p, ignore_errors=True) if Path(p).is_dir() else Path(p).unlink(missing_ok=True) for p in paths]"
