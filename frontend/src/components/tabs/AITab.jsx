@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import remarkGfm from '../../lib/remarkGfm';
 import {
   normalizeCopilotHistory,
   sendChatMessage,
