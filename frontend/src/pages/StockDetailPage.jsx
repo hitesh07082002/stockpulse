@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, startTransition, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCompany } from '../hooks/useStockData';
 import OverviewTab from '../components/tabs/OverviewTab';
-import FinancialsTab from '../components/tabs/FinancialsTab';
-import PriceTab from '../components/tabs/PriceTab';
-import ValuationTab from '../components/tabs/ValuationTab';
-import AITab from '../components/tabs/AITab';
+
+const FinancialsTab = lazy(() => import('../components/tabs/FinancialsTab'));
+const PriceTab = lazy(() => import('../components/tabs/PriceTab'));
+const ValuationTab = lazy(() => import('../components/tabs/ValuationTab'));
+const AITab = lazy(() => import('../components/tabs/AITab'));
 
 const TABS = [
   { key: 'overview', label: 'Overview', Component: OverviewTab },
@@ -14,6 +15,38 @@ const TABS = [
   { key: 'valuation', label: 'Valuation', Component: ValuationTab },
   { key: 'ai', label: 'AI', Component: AITab },
 ];
+
+function TabPanelFallback({ tabKey }) {
+  const showCardGrid = tabKey === 'financials' || tabKey === 'valuation';
+  const showChart = tabKey === 'financials' || tabKey === 'price' || tabKey === 'valuation';
+
+  return (
+    <div className="flex flex-col gap-4">
+      {showCardGrid && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div key={idx} className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2">
+              <div className="skeleton h-3 w-24 rounded" />
+              <div className="skeleton h-7 w-32 rounded" />
+              <div className="skeleton h-3 w-16 rounded" />
+            </div>
+          ))}
+        </div>
+      )}
+      {showChart && (
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <div className="skeleton h-[360px] w-full rounded-lg" />
+        </div>
+      )}
+      {!showCardGrid && !showChart && (
+        <div className="bg-surface border border-border rounded-lg p-6">
+          <div className="skeleton h-6 w-40 rounded" />
+          <div className="mt-4 skeleton h-40 w-full rounded-lg" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatMarketCap(value) {
   if (value == null) return null;
@@ -190,7 +223,9 @@ function StockDetailPage() {
                       ? 'text-accent border-accent'
                       : 'text-text-secondary hover:text-text-primary border-transparent'
                   }`}
-                  onClick={() => setActiveTab(key)}
+                  onClick={() => {
+                    startTransition(() => setActiveTab(key));
+                  }}
                 >
                   {label}
                 </button>
@@ -204,7 +239,9 @@ function StockDetailPage() {
       {/* ---- Tab Content ---- */}
       <div className="py-6 flex-1" role="tabpanel">
         {ActiveComponent && (
-          <ActiveComponent ticker={ticker} company={company} />
+          <Suspense fallback={<TabPanelFallback tabKey={activeTab} />}>
+            <ActiveComponent ticker={ticker} company={company} />
+          </Suspense>
         )}
       </div>
     </div>

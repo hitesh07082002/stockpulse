@@ -1,19 +1,53 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
-import StockDetailPage from './pages/StockDetailPage';
-import ScreenerPage from './pages/ScreenerPage';
-import AboutPage from './pages/AboutPage';
+
+const StockDetailPage = lazy(() => import('./pages/StockDetailPage'));
+const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
+const AboutPage = lazy(() => import('./pages/AboutPage'));
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[calc(100vh-56px-80px)] px-4 py-10">
+      <div className="mx-auto flex max-w-[1280px] flex-col gap-4">
+        <div className="skeleton h-10 w-56 rounded" />
+        <div className="skeleton h-6 w-80 rounded" />
+        <div className="skeleton h-64 w-full rounded-lg" />
+      </div>
+    </div>
+  );
+}
 
 function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/stock/:ticker" element={<StockDetailPage />} />
-        <Route path="/screener" element={<ScreenerPage />} />
-        <Route path="/about" element={<AboutPage />} />
+        <Route
+          path="/stock/:ticker"
+          element={(
+            <Suspense fallback={<RouteFallback />}>
+              <StockDetailPage />
+            </Suspense>
+          )}
+        />
+        <Route
+          path="/screener"
+          element={(
+            <Suspense fallback={<RouteFallback />}>
+              <ScreenerPage />
+            </Suspense>
+          )}
+        />
+        <Route
+          path="/about"
+          element={(
+            <Suspense fallback={<RouteFallback />}>
+              <AboutPage />
+            </Suspense>
+          )}
+        />
       </Routes>
     </Layout>
   );

@@ -22,7 +22,7 @@ test('landing search leads into the stock detail financials hero flow', async ({
   await expect(page.getByRole('button', { name: /AAPL Apple/i })).toBeVisible();
 
   await page.getByRole('button', { name: /AAPL Apple/i }).click();
-  await expect(page.getByText('AAPL')).toBeVisible();
+  await expect(page.getByText('AAPL', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Financials' }).click();
   await expect(page.getByRole('heading', { name: 'Revenue' })).toBeVisible();
