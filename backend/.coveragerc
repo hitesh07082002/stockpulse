@@ -1,0 +1,12 @@
+[run]
+branch = True
+source =
+    stocks
+
+[report]
+show_missing = True
+skip_covered = False
+omit =
+    stocks/test_*.py
+    stocks/*/migrations/*
+    stocks/migrations/*

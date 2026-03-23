@@ -1,0 +1,32 @@
+services:
+  web:
+    image: ghcr.io/hitesh07082002/stockpulse:latest
+    container_name: stockpulse-web
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: stockpulse-db
+    environment:
+      POSTGRES_DB: stockpulse
+      POSTGRES_USER: stockpulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockpulse -d stockpulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:

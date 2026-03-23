@@ -1,6 +1,7 @@
 # Python
 venv/
 __pycache__/
+.coverage
 *.py[cod]
 *.egg-info/
 .eggs/
@@ -17,6 +18,11 @@ backend/media/
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+backend/htmlcov/
+backend/coverage.xml
 
 # IDE
 .vscode/

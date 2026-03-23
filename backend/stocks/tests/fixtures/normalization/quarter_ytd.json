@@ -1,0 +1,18 @@
+{
+  "previous_ytd": {
+    "metric": "revenue",
+    "form": "10-Q",
+    "unit": "USD",
+    "fiscal_year": 2024,
+    "fiscal_quarter": 1,
+    "val": 100
+  },
+  "current_ytd": {
+    "metric": "revenue",
+    "form": "10-Q",
+    "unit": "USD",
+    "fiscal_year": 2024,
+    "fiscal_quarter": 2,
+    "val": 230
+  }
+}

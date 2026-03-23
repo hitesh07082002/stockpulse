@@ -1,11 +1,14 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
 import { useFinancials } from '../../hooks/useStockData';
@@ -35,16 +38,10 @@ function formatPercent(n) {
   return `${(Number(n) * 100).toFixed(1)}%`;
 }
 
-function formatRatio(n) {
-  if (n == null || isNaN(n)) return '—';
-  return Number(n).toFixed(2);
-}
-
 function formatChartValue(value, metric) {
   if (value == null || isNaN(value)) return '—';
   if (PERCENT_METRICS.includes(metric)) return formatPercent(value);
-  if (metric === 'eps') return formatEPS(value);
-  if (metric === 'debt_equity') return formatRatio(value);
+  if (metric === 'diluted_eps') return formatEPS(value);
   return formatLargeNumber(value);
 }
 
@@ -53,8 +50,7 @@ function formatYAxis(value, metric) {
   if (PERCENT_METRICS.includes(metric)) {
     return `${(value * 100).toFixed(0)}%`;
   }
-  if (metric === 'eps') return `$${value.toFixed(1)}`;
-  if (metric === 'debt_equity') return value.toFixed(1);
+  if (metric === 'diluted_eps') return `$${value.toFixed(1)}`;
   const abs = Math.abs(value);
   const sign = value < 0 ? '-' : '';
   if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(1)}T`;
@@ -78,20 +74,27 @@ const PERCENT_METRICS = [
 const TOP_METRICS = [
   { key: 'revenue', label: 'Revenue' },
   { key: 'net_income', label: 'Net Income' },
-  { key: 'eps', label: 'EPS' },
+  { key: 'diluted_eps', label: 'Diluted EPS' },
   { key: 'free_cash_flow', label: 'Free Cash Flow' },
 ];
 
 const MORE_METRICS = [
-  { key: 'ebitda', label: 'EBITDA' },
+  { key: 'gross_profit', label: 'Gross Profit' },
   { key: 'gross_margin', label: 'Gross Margin' },
   { key: 'operating_margin', label: 'Operating Margin' },
   { key: 'net_margin', label: 'Net Margin' },
   { key: 'total_debt', label: 'Total Debt' },
-  { key: 'debt_equity', label: 'Debt/Equity' },
+  { key: 'shareholders_equity', label: 'Shareholders Equity' },
   { key: 'roe', label: 'ROE' },
   { key: 'cash_and_equivalents', label: 'Cash & Equivalents' },
 ];
+
+const LINE_METRICS = new Set([
+  'gross_margin',
+  'operating_margin',
+  'net_margin',
+  'roe',
+]);
 
 /* ────────────────────────────────────────────
    Data processing
@@ -103,64 +106,85 @@ function processFinancialData(rawData) {
   const grouped = {};
 
   for (const row of rawData) {
-    const metric = row.metric;
-    const period = row.fiscal_year || row.fiscal_period || row.period;
+    const metric = row.metric_key;
     const value = row.value != null ? Number(row.value) : null;
+    const fiscalYear = row.fiscal_year ?? null;
+    const fiscalQuarter = row.fiscal_quarter ?? null;
+    const isQuarterly = row.period_type === 'quarterly';
+    const periodKey = isQuarterly
+      ? `${fiscalYear}-Q${fiscalQuarter}`
+      : String(fiscalYear ?? row.fiscal_period ?? row.period);
+    const label = isQuarterly
+      ? `${fiscalYear} Q${fiscalQuarter}`
+      : String(fiscalYear ?? row.fiscal_period ?? row.period);
+    const sortValue = isQuarterly
+      ? ((fiscalYear ?? 0) * 10) + (fiscalQuarter ?? 0)
+      : (fiscalYear ?? 0) * 10;
 
     if (!grouped[metric]) grouped[metric] = {};
-    grouped[metric][period] = value;
+    grouped[metric][periodKey] = {
+      value,
+      label,
+      sortValue,
+    };
   }
 
   return grouped;
 }
 
 function buildChartData(grouped, metric, periodType) {
-  // Get all periods from all metrics so we have a full timeline
-  const allPeriods = new Set();
+  const allPeriods = new Map();
   for (const m of Object.keys(grouped)) {
-    for (const p of Object.keys(grouped[m])) {
-      allPeriods.add(p);
+    for (const [periodKey, meta] of Object.entries(grouped[m])) {
+      if (!allPeriods.has(periodKey)) {
+        allPeriods.set(periodKey, meta);
+      }
     }
   }
 
-  const periods = Array.from(allPeriods).sort();
+  const periods = Array.from(allPeriods.entries())
+    .sort(([, left], [, right]) => left.sortValue - right.sortValue);
 
-  // Compute derived metrics
-  return periods.map((period) => {
+  return periods.map(([periodKey, meta]) => {
     let value = null;
 
     if (metric === 'free_cash_flow') {
-      const ocf = grouped['operating_cash_flow']?.[period];
-      const capex = grouped['capital_expenditures']?.[period];
-      if (ocf != null && capex != null) {
-        value = ocf - Math.abs(capex);
+      const directFcf = grouped['free_cash_flow']?.[periodKey]?.value;
+      if (directFcf != null) {
+        value = directFcf;
+      } else {
+        const ocf = grouped['operating_cash_flow']?.[periodKey]?.value;
+        const capex = grouped['capital_expenditures']?.[periodKey]?.value;
+        if (ocf != null && capex != null) {
+          value = ocf - Math.abs(capex);
+        }
       }
     } else if (metric === 'gross_margin') {
-      const gp = grouped['gross_profit']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const gp = grouped['gross_profit']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (gp != null && rev != null && rev !== 0) {
         value = gp / rev;
       }
     } else if (metric === 'operating_margin') {
-      const oi = grouped['operating_income']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const oi = grouped['operating_income']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (oi != null && rev != null && rev !== 0) {
         value = oi / rev;
       }
     } else if (metric === 'net_margin') {
-      const ni = grouped['net_income']?.[period];
-      const rev = grouped['revenue']?.[period];
+      const ni = grouped['net_income']?.[periodKey]?.value;
+      const rev = grouped['revenue']?.[periodKey]?.value;
       if (ni != null && rev != null && rev !== 0) {
         value = ni / rev;
       }
     } else {
-      value = grouped[metric]?.[period] ?? null;
+      value = grouped[metric]?.[periodKey]?.value ?? null;
     }
 
     return {
-      period,
+      period: periodKey,
       value,
-      label: periodType === 'quarterly' ? period : String(period),
+      label: periodType === 'quarterly' ? meta.label : String(meta.label),
     };
   }).filter((d) => d.value != null);
 }
@@ -222,13 +246,14 @@ function SkeletonChart() {
    FinancialsTab
    ──────────────────────────────────────────── */
 
-function FinancialsTab({ ticker, company }) {
+function FinancialsTab({ ticker }) {
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [periodType, setPeriodType] = useState('annual');
 
-  const { data: rawData, isLoading, isError, error } = useFinancials(ticker, {
+  const { data: financialResponse, isLoading, isError, error } = useFinancials(ticker, {
     period_type: periodType,
   });
+  const rawData = useMemo(() => financialResponse?.facts ?? [], [financialResponse]);
 
   const grouped = useMemo(() => processFinancialData(rawData), [rawData]);
 
@@ -249,13 +274,26 @@ function FinancialsTab({ ticker, company }) {
     TOP_METRICS.find((m) => m.key === selectedMetric)?.label ||
     MORE_METRICS.find((m) => m.key === selectedMetric)?.label ||
     selectedMetric;
+  const renderAsLine = LINE_METRICS.has(selectedMetric);
 
   if (isError) {
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-surface border border-error rounded-lg p-4 text-center">
           <p className="font-body text-sm text-error">
-            {error?.message || 'Failed to load financial data. Please try again.'}
+            {error?.message || 'Financial data unavailable. Try again later.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoading && rawData.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="bg-surface border border-border rounded-lg p-8 text-center">
+          <p className="font-body text-sm text-text-secondary">
+            No financial data filed with the SEC for {ticker?.toUpperCase()}.
           </p>
         </div>
       </div>
@@ -275,7 +313,7 @@ function FinancialsTab({ ticker, company }) {
               const isActive = selectedMetric === m.key;
 
               let displayValue;
-              if (m.key === 'eps') {
+              if (m.key === 'diluted_eps') {
                 displayValue = formatEPS(latest);
               } else {
                 displayValue = formatLargeNumber(latest);
@@ -339,61 +377,91 @@ function FinancialsTab({ ticker, company }) {
         <div className="bg-surface border border-border rounded-lg p-4">
           <h4 className="font-display text-lg font-bold text-text-primary">{selectedLabel}</h4>
           {chartData.length > 0 ? (
-            <div className="h-[400px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="accentGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#14B8A6" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#14B8A6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="var(--color-border)"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                    axisLine={{ stroke: 'var(--color-border)' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => formatYAxis(v, selectedMetric)}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomTooltip metric={selectedMetric} />}
-                    cursor={{ stroke: 'var(--color-text-tertiary)', strokeDasharray: '3 3' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#14B8A6"
-                    strokeWidth={2}
-                    fill="url(#accentGradient)"
-                    dot={false}
-                    activeDot={{
-                      r: 5,
-                      fill: '#14B8A6',
-                      stroke: 'var(--color-surface)',
-                      strokeWidth: 2,
-                    }}
-                  />
-                </AreaChart>
+            <div className="mt-4 w-full">
+              <ResponsiveContainer width="100%" height={360} minWidth={0}>
+                {renderAsLine ? (
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      vertical={false}
+                    />
+                    <ReferenceLine y={0} stroke="var(--color-text-secondary)" strokeOpacity={0.35} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={{ stroke: 'var(--color-border)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => formatYAxis(v, selectedMetric)}
+                      width={70}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip metric={selectedMetric} />}
+                      cursor={{ stroke: 'var(--color-text-tertiary)', strokeDasharray: '3 3' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#14B8A6"
+                      strokeWidth={2.5}
+                      dot={false}
+                      activeDot={{
+                        r: 5,
+                        fill: '#14B8A6',
+                        stroke: 'var(--color-surface)',
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </LineChart>
+                ) : (
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      vertical={false}
+                    />
+                    <ReferenceLine y={0} stroke="var(--color-text-secondary)" strokeOpacity={0.35} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={{ stroke: 'var(--color-border)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => formatYAxis(v, selectedMetric)}
+                      width={70}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip metric={selectedMetric} />}
+                      cursor={{ fill: 'rgba(20, 184, 166, 0.08)' }}
+                    />
+                    <Bar
+                      dataKey="value"
+                      fill="#14B8A6"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           ) : (
             <div className="flex items-center justify-center h-[400px] w-full mt-4">
               <span className="font-body text-sm text-text-tertiary">
-                No data available for {selectedLabel}
+                No {selectedLabel.toLowerCase()} data filed with the SEC for {ticker?.toUpperCase()}.
               </span>
             </div>
           )}
