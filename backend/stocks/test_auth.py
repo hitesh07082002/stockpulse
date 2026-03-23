@@ -144,6 +144,39 @@ def test_google_callback_creates_new_user_and_sets_cookies(api_client, monkeypat
 
 
 @pytest.mark.django_db
+@override_settings(DEBUG=True, CORS_ALLOWED_ORIGINS=["http://127.0.0.1:5173"])
+def test_google_callback_preserves_localhost_origin_when_loopback_alias_is_allowed(api_client, monkeypatch):
+    start_response = api_client.get(
+        "/api/auth/google/start/",
+        {"next": "/stock/AAPL", "origin": "http://localhost:5173"},
+    )
+    state = parse_qs(urlsplit(start_response["Location"]).query)["state"][0]
+
+    monkeypatch.setattr(
+        "stocks.auth_views.exchange_google_code_for_tokens",
+        lambda code: {"access_token": "google-access-token"},
+    )
+    monkeypatch.setattr(
+        "stocks.auth_views.fetch_google_profile",
+        lambda access_token: {
+            "sub": "google-localhost-user",
+            "email": "localhost-google-user@example.com",
+            "email_verified": True,
+            "name": "Loopback Localhost User",
+        },
+    )
+
+    response = api_client.get(
+        "/api/auth/google/callback/",
+        {"code": "test-code", "state": state},
+    )
+
+    assert response.status_code == 302
+    assert response["Location"].startswith("http://localhost:5173/stock/AAPL")
+    assert "auth=google-success" in response["Location"]
+
+
+@pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_google_callback_auto_links_existing_email(api_client, monkeypatch):
     User = get_user_model()

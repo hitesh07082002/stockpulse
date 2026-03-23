@@ -21,6 +21,22 @@ class GoogleOAuthError(Exception):
     pass
 
 
+def _default_port_for_scheme(scheme: str) -> int | None:
+    if scheme == "https":
+        return 443
+    if scheme == "http":
+        return 80
+    return None
+
+
+def _port_for_origin(parsed) -> int | None:
+    return parsed.port or _default_port_for_scheme(parsed.scheme)
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
 def _clean_name_parts(name: str) -> tuple[str, str]:
     words = [part for part in (name or "").strip().split() if part]
     if not words:
@@ -145,8 +161,8 @@ def sanitize_next_path(next_path: str | None) -> str:
 
 
 def sanitize_frontend_origin(origin: str | None) -> str:
-    allowed = set(settings.CORS_ALLOWED_ORIGINS)
-    default_origin = next(iter(allowed), "http://localhost:5173")
+    allowed = [value for value in settings.CORS_ALLOWED_ORIGINS if value]
+    default_origin = allowed[0] if allowed else "http://localhost:5173"
     if not origin:
         return default_origin
 
@@ -157,6 +173,17 @@ def sanitize_frontend_origin(origin: str | None) -> str:
     normalized = f"{parsed.scheme}://{parsed.netloc}"
     if normalized in allowed:
         return normalized
+
+    if _is_loopback_host(parsed.hostname):
+        requested_port = _port_for_origin(parsed)
+        for allowed_origin in allowed:
+            allowed_parsed = urlsplit(allowed_origin)
+            if (
+                allowed_parsed.scheme == parsed.scheme
+                and _is_loopback_host(allowed_parsed.hostname)
+                and _port_for_origin(allowed_parsed) == requested_port
+            ):
+                return normalized
 
     return default_origin
 
