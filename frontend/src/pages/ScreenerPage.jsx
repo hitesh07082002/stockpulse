@@ -3,17 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { useScreener } from '../hooks/useStockData';
 
 const SECTORS = [
-  'Technology',
-  'Healthcare',
-  'Financial Services',
-  'Consumer Cyclical',
   'Communication Services',
-  'Industrials',
-  'Consumer Defensive',
+  'Consumer Discretionary',
+  'Consumer Staples',
   'Energy',
-  'Utilities',
+  'Financials',
+  'Health Care',
+  'Industrials',
+  'Information Technology',
+  'Materials',
   'Real Estate',
-  'Basic Materials',
+  'Utilities',
 ];
 
 const MARKET_CAP_PRESETS = [

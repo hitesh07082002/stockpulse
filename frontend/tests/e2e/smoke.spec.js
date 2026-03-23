@@ -41,12 +41,22 @@ test('price tab supports range selection', async ({ page }) => {
   await expect(fiveYearButton).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('valuation tab shows annualized return framing', async ({ page }) => {
+  await page.goto('/stock/AAPL');
+
+  await page.getByRole('tab', { name: 'DCF Calculator' }).click();
+
+  await expect(page.getByText(/Implied CAGR vs Today/i)).toBeVisible();
+  await expect(page.getByText(/Total 5-year return:/i)).toBeVisible();
+});
+
 test('screener filters into a company detail flow', async ({ page }) => {
   await page.goto('/screener');
 
-  await page.getByRole('button', { name: /large >\$10b/i }).click();
+  await page.getByRole('combobox').selectOption('Information Technology');
   await page.getByRole('button', { name: /apply filters/i }).click();
 
+  await expect(page.getByText(/result/i)).toBeVisible();
   const firstRow = page.locator('tbody tr').first();
   await expect(firstRow).toBeVisible();
 
@@ -55,4 +65,11 @@ test('screener filters into a company detail flow', async ({ page }) => {
 
   await expect(page).toHaveURL(new RegExp(`/stock/${ticker}$`));
   await expect(page.getByText(ticker, { exact: true })).toBeVisible();
+});
+
+test('invalid ticker renders the search-facing not-found state', async ({ page }) => {
+  await page.goto('/stock/INVALIDTICKER');
+
+  await expect(page.getByText(/company not found for ticker/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: /back to search/i })).toBeVisible();
 });

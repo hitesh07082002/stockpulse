@@ -12,7 +12,7 @@ const TABS = [
   { key: 'overview', label: 'Overview', Component: OverviewTab },
   { key: 'financials', label: 'Financials', Component: FinancialsTab },
   { key: 'price', label: 'Price', Component: PriceTab },
-  { key: 'valuation', label: 'Valuation', Component: ValuationTab },
+  { key: 'valuation', label: 'DCF Calculator', Component: ValuationTab },
   { key: 'ai', label: 'AI', Component: AITab },
 ];
 
@@ -89,9 +89,11 @@ function StockDetailPage() {
   const { ticker } = useParams();
   const { data: company, isLoading, isError, error } = useCompany(ticker);
   const [activeTab, setActiveTab] = useState('overview');
+  const normalizedTicker = ticker?.toUpperCase();
+  const isNotFound = (!isLoading && !isError && !company) || (isError && error?.status === 404);
 
-  // 404: company not found (API returned but no data)
-  if (!isLoading && !isError && !company) {
+  // Treat an empty result or backend 404 as the same search-facing not-found state.
+  if (isNotFound) {
     return (
       <div className="flex flex-col min-h-[calc(100vh-56px-80px)]">
         <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
@@ -99,7 +101,7 @@ function StockDetailPage() {
             404
           </span>
           <p className="font-body text-lg text-text-secondary">
-            Company not found for ticker <strong>{ticker?.toUpperCase()}</strong>
+            Company not found for ticker <strong>{normalizedTicker}</strong>
           </p>
           <Link
             to="/"

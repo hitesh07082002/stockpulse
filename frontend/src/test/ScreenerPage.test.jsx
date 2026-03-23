@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ScreenerPage from '../pages/ScreenerPage';
@@ -80,5 +80,31 @@ describe('ScreenerPage', () => {
     fireEvent.click(screen.getByText('AAPL'));
 
     expect(navigateMock).toHaveBeenCalledWith('/stock/AAPL');
+  });
+
+  it('applies exact GICS sector values from the dropdown', async () => {
+    useScreenerMock.mockReturnValue({
+      data: { count: 0, results: [] },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      error: null,
+    });
+
+    renderPage();
+
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: 'Information Technology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /apply filters/i }));
+
+    await waitFor(() => {
+      expect(useScreenerMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sector: 'Information Technology' }),
+        'market_cap',
+        'desc',
+        1,
+      );
+    });
   });
 });

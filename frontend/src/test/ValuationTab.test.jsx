@@ -67,4 +67,42 @@ describe('ValuationTab', () => {
 
     expect(screen.getAllByText(/missing shares outstanding for per-share cash flow valuation/i).length).toBeGreaterThan(0);
   });
+
+  it('shows annualized return as the primary comparison metric', () => {
+    useValuationInputsMock.mockReturnValue({
+      data: {
+        not_applicable: false,
+        warnings: [],
+        current_price: 100,
+        projection_years_default: 5,
+        earnings_mode: {
+          available: true,
+          current_metric_label: 'EPS',
+          current_metric_value: 5,
+          growth_rate_default: 10,
+          terminal_multiple_default: 20,
+          desired_return_default: 12,
+          current_trading_multiple: 18,
+        },
+        cash_flow_mode: {
+          available: true,
+          current_metric_label: 'FCF Per Share',
+          current_metric_value: 6,
+          growth_rate_default: 8,
+          terminal_multiple_default: 15,
+          desired_return_default: 12,
+          current_trading_multiple: 16,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ValuationTab ticker="AAPL" />);
+
+    expect(screen.getByText(/Implied CAGR vs Today/i)).toBeInTheDocument();
+    expect(screen.getByText('+10.00%')).toBeInTheDocument();
+    expect(screen.getByText(/Total 5-year return: \+61.05%/i)).toBeInTheDocument();
+    expect(screen.getByText(/Entry Price For 12.00% CAGR/i)).toBeInTheDocument();
+  });
 });

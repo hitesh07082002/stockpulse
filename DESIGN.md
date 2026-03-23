@@ -182,7 +182,7 @@
 
 /stock/:ticker  (Stock Detail)
 ├── [PERSISTENT] Company header: ticker > name > quote > change > sector
-├── Tab bar: Overview | Financials | Price | Valuation | AI
+├── Tab bar: Overview | Financials | Price | DCF Calculator | AI
 │
 ├── Overview tab
 │   ├── [1st] Key metric cards (4-6): PE, market cap, revenue, margins
@@ -202,7 +202,7 @@
 │
 ├── Valuation tab
 │   ├── [1st] Mode toggle: Earnings | Cash Flow
-│   ├── [2nd] Summary result cards (implied value, upside/downside vs current)
+│   ├── [2nd] Summary result cards (implied value, annualized return vs current, entry price)
 │   ├── [3rd] Editable assumptions (growth rate, terminal multiple, desired return)
 │   ├── [4th] 5-year projection chart
 │   └── [5th] Guardrail warnings (financial sector, negative earnings/FCF, missing data)
@@ -234,12 +234,13 @@
 
 ### Stock Detail
 - Persistent company header at top.
-- Tabs below header: Overview, Financials, Price, Valuation, AI.
+- Tabs below header: Overview, Financials, Price, DCF Calculator, AI.
 - The Financials tab is the hero tab and should feel more substantial than the rest.
 
 ### Screener
 - Desktop: filter sidebar plus results table.
 - Mobile: filters in a bottom sheet, results as stacked cards. Show primary filters (sector, market cap, PE, positive FCF toggle) by default; remaining filters behind a "More filters" expand.
+- Sector options should use the exact GICS names shown in the data, not shortened aliases.
 - V1 filter set stays focused: sector, industry, market cap, PE, revenue growth, gross margin, operating margin, debt-to-equity, and positive free-cash-flow toggle.
 - No saved screens, custom columns, or advanced boolean filter builders in V1.
 
@@ -289,7 +290,7 @@
 - Structure the tab as an analyst workspace:
   - mode toggle: `Earnings` / `Cash Flow`
   - summary result cards
-  - upside/downside versus current price
+  - annualized return versus current price, with total return only as supporting context
   - editable assumptions
   - 5-year projection chart
   - short methodology or warning notes

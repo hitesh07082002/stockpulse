@@ -39,6 +39,10 @@ function renderPage(entry = '/stock/MSFT') {
   );
 }
 
+function createApiError(message, status) {
+  return Object.assign(new Error(message), { status });
+}
+
 describe('StockDetailPage', () => {
   beforeEach(() => {
     vi.mocked(useCompany).mockReset();
@@ -94,12 +98,27 @@ describe('StockDetailPage', () => {
     expect(screen.getByRole('link', { name: /Back to search/i })).toBeInTheDocument();
   });
 
+  it('renders the search-facing 404 state for backend not-found responses', () => {
+    vi.mocked(useCompany).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: createApiError('Company not found', 404),
+    });
+
+    renderPage('/stock/INVALIDTICKER');
+
+    expect(screen.getByText(/Company not found for ticker/i)).toBeInTheDocument();
+    expect(screen.getByText(/INVALIDTICKER/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Back to search/i })).toBeInTheDocument();
+  });
+
   it('renders the API error state with a recovery link', () => {
     vi.mocked(useCompany).mockReturnValue({
       data: undefined,
       isLoading: false,
       isError: true,
-      error: new Error('Backend unavailable'),
+      error: createApiError('Backend unavailable', 500),
     });
 
     renderPage();

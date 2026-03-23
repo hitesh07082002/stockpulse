@@ -44,7 +44,7 @@ V1 is **not**:
 - email/password exists as fallback
 - AI limits are `10/day` anonymous and `50/day` authenticated
 - Price charts are line-only in V1
-- Valuation is a Qualtrim-like DCF flow
+- DCF Calculator is a Qualtrim-like DCF flow
 - Financials is the hero tab
 - scheduled Django management commands are used instead of Celery/Redis in V1 unless the documented SLAs fail
 
@@ -96,8 +96,8 @@ Already in place:
 - overview and financials tabs wired to canonical company detail, snapshot, and SEC facts endpoints
 - company list/detail/financials API coverage, frontend state coverage, and landing -> detail -> Financials smoke coverage
 - cache-backed price ranges with stale fallback and adjusted-close line charts
-- valuation guardrails for financial-sector disable, negative earnings / FCF warnings, and missing shares-outstanding handling
-- focused screener filters and API-driven sorting on top of `MetricSnapshot`
+- valuation guardrails for financial-sector disable, negative earnings / FCF warnings, missing shares-outstanding handling, and annualized CAGR comparison against the desired return input
+- focused screener filters with exact GICS sector names and API-driven sorting on top of `MetricSnapshot`
 - M4 API coverage, frontend unit coverage for price/valuation/screener states, and smoke coverage for price range selection and screener -> company navigation
 
 Latest verification pass:
