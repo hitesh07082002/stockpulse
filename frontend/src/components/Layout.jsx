@@ -38,8 +38,8 @@ function Layout({ children }) {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-surface border-b border-border backdrop-blur-md">
-        <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-50 border-b border-border bg-surface backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4 sm:h-14">
           <Link
             to="/"
             className="font-display font-bold text-xl text-accent no-underline tracking-tight"
@@ -77,7 +77,7 @@ function Layout({ children }) {
             </Link>
             <button
               onClick={() => navigate('/screener')}
-              className="flex items-center justify-center rounded-md border-none bg-transparent p-1 text-text-secondary transition-colors hover:text-text-primary"
+              className="flex h-11 w-11 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-secondary transition-colors hover:text-text-primary"
               aria-label="Search stocks"
             >
               <svg
@@ -96,7 +96,7 @@ function Layout({ children }) {
             </button>
             <button
               onClick={toggleTheme}
-              className="flex items-center justify-center rounded-md border border-border p-2 text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
+              className="flex h-11 w-11 items-center justify-center rounded-md border border-border p-0 text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? (
@@ -155,7 +155,7 @@ function Layout({ children }) {
                 <button
                   type="button"
                   onClick={logout}
-                  className="rounded-full border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
+                  className="min-h-11 rounded-full border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
                 >
                   Sign out
                 </button>
@@ -164,7 +164,7 @@ function Layout({ children }) {
               <button
                 type="button"
                 onClick={() => openAuthModal('login')}
-                className="rounded-full bg-accent px-3 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-hover sm:px-4"
+                className="min-h-11 rounded-full bg-accent px-3 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-hover sm:px-4"
               >
                 Sign in
               </button>
