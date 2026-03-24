@@ -27,6 +27,46 @@ function jsonResponse(payload, init = {}) {
   });
 }
 
+function createFetchStub() {
+  return vi.fn((input) => {
+    const url = typeof input === 'string' ? input : input.toString();
+
+    if (url.includes('/auth/session/')) {
+      return Promise.resolve(jsonResponse(ANONYMOUS_SESSION));
+    }
+
+    if (url.includes('/auth/refresh/')) {
+      return Promise.resolve(jsonResponse({ error: 'No refresh session available.' }, { status: 401 }));
+    }
+
+    if (url.includes('/screener/')) {
+      return Promise.resolve(jsonResponse({
+        count: 1,
+        results: [
+          {
+            ticker: 'MSFT',
+            name: 'Microsoft Corporation',
+            sector: 'Technology',
+            current_price: '415.67',
+            market_cap: 3100000000000,
+          },
+        ],
+      }));
+    }
+
+    if (url.includes('/companies/MSFT/prices/')) {
+      return Promise.resolve(jsonResponse({
+        data: [
+          { date: '2026-03-20', adjusted_close: 410.0, close: 410.0 },
+          { date: '2026-03-21', adjusted_close: 415.67, close: 415.67 },
+        ],
+      }));
+    }
+
+    throw new Error(`Unhandled fetch in App.test: ${url}`);
+  });
+}
+
 function renderApp(initialEntry = '/') {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -47,19 +87,7 @@ function renderApp(initialEntry = '/') {
 
 describe('App routes', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn((input) => {
-      const url = typeof input === 'string' ? input : input.toString();
-
-      if (url.includes('/auth/session/')) {
-        return Promise.resolve(jsonResponse(ANONYMOUS_SESSION));
-      }
-
-      if (url.includes('/auth/refresh/')) {
-        return Promise.resolve(jsonResponse({ error: 'No refresh session available.' }, { status: 401 }));
-      }
-
-      throw new Error(`Unhandled fetch in App.test: ${url}`);
-    }));
+    vi.stubGlobal('fetch', createFetchStub());
   });
 
   afterEach(() => {
@@ -70,38 +98,31 @@ describe('App routes', () => {
     renderApp('/');
 
     expect(
-      screen.getByRole('heading', { name: /search any s&p 500 company/i }),
+      screen.getByRole('heading', { name: /stockpulse/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText(/search by ticker or company name/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/normalized sec financial data for 500 s&p companies/i),
+      screen.getByText(/500 companies · 30yr sec filings · updated daily/i),
     ).toBeInTheDocument();
   });
 
   it('does not hit refresh for a fully anonymous bootstrap session', async () => {
-    const fetchSpy = vi.fn((input) => {
-      const url = typeof input === 'string' ? input : input.toString();
-
-      if (url.includes('/auth/session/')) {
-        return Promise.resolve(jsonResponse(ANONYMOUS_SESSION));
-      }
-
-      if (url.includes('/auth/refresh/')) {
-        return Promise.resolve(jsonResponse({ error: 'No refresh session available.' }, { status: 401 }));
-      }
-
-      throw new Error(`Unhandled fetch in App.test: ${url}`);
-    });
+    const fetchSpy = createFetchStub();
     vi.stubGlobal('fetch', fetchSpy);
 
     renderApp('/');
 
-    await screen.findByRole('heading', { name: /search any s&p 500 company/i });
+    await screen.findByRole('heading', { name: /stockpulse/i });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0].toString()).toContain('/auth/session/');
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(
+      fetchSpy.mock.calls.some(([request]) => request.toString().includes('/auth/session/')),
+    ).toBe(true);
+    expect(
+      fetchSpy.mock.calls.some(([request]) => request.toString().includes('/auth/refresh/')),
+    ).toBe(false);
   });
 
   it('renders the about page on the about route', async () => {

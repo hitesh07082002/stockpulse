@@ -1,20 +1,85 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCompanySearch } from '../hooks/useStockData';
+import { fetchPrices, fetchScreener } from '../utils/api';
 
 const QUICK_TICKERS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'JPM'];
 
-/* ------------------------------------------------------------------ */
-/*  SearchBar Component                                                */
-/* ------------------------------------------------------------------ */
+function formatPrice(value) {
+  if (value == null) return '--';
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '--';
+
+  return `$${number.toFixed(2)}`;
+}
+
+function formatChange(value) {
+  if (value == null) return null;
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+
+  const prefix = number > 0 ? '+' : '';
+  return `${prefix}${number.toFixed(2)}%`;
+}
+
+function getLatestClose(point) {
+  const value = point?.adjusted_close ?? point?.close;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getDayChangePercent(points) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return null;
+  }
+
+  const latest = getLatestClose(points.at(-1));
+  const previous = getLatestClose(points.at(-2));
+  if (latest == null || previous == null || previous === 0) {
+    return null;
+  }
+
+  return ((latest - previous) / previous) * 100;
+}
+
+async function fetchLiveCompanies() {
+  const screenerPayload = await fetchScreener({
+    sort: 'market_cap',
+    order: 'desc',
+  });
+
+  const topCompanies = (screenerPayload?.results ?? []).slice(0, 5);
+  if (topCompanies.length === 0) {
+    return [];
+  }
+
+  return Promise.all(
+    topCompanies.map(async (company) => {
+      const pricePayload = await fetchPrices(company.ticker, '1M');
+      const pricePoints = pricePayload?.data ?? [];
+      const latestPrice = getLatestClose(pricePoints.at(-1));
+
+      return {
+        ticker: company.ticker,
+        currentPrice: Number(company.current_price ?? latestPrice),
+        changePercent: getDayChangePercent(pricePoints),
+      };
+    }),
+  );
+}
+
 function SearchBar() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
+  const itemRefs = useRef([]);
 
-  // Debounce the search query (300ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query.trim());
@@ -24,99 +89,168 @@ function SearchBar() {
 
   const { data, isLoading } = useCompanySearch(debouncedQuery);
   const results = data?.results ?? data ?? [];
+  const showDropdown = isOpen && debouncedQuery.length >= 1;
 
-  // Close dropdown on outside click
   useEffect(() => {
-    function handleClickOutside(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
         setIsOpen(false);
+        setSelectedIndex(-1);
       }
     }
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSelect = useCallback(
-    (ticker) => {
-      setQuery('');
-      setIsOpen(false);
-      navigate(`/stock/${ticker}`);
-    },
-    [navigate],
-  );
+  useEffect(() => {
+    setSelectedIndex((currentIndex) => {
+      if (results.length === 0) {
+        return -1;
+      }
 
-  const handleQuickClick = useCallback(
-    (ticker) => {
-      setQuery('');
-      setIsOpen(false);
-      navigate(`/stock/${ticker}`);
-    },
-    [navigate],
-  );
+      return Math.min(currentIndex, results.length - 1);
+    });
+  }, [results.length]);
 
-  const showDropdown = isOpen && debouncedQuery.length >= 1;
+  useEffect(() => {
+    if (!showDropdown || selectedIndex < 0) {
+      return;
+    }
+
+    itemRefs.current[selectedIndex]?.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [selectedIndex, showDropdown]);
+
+  function handleSelect(ticker) {
+    setQuery('');
+    setDebouncedQuery('');
+    setIsOpen(false);
+    setSelectedIndex(-1);
+    navigate(`/stock/${ticker}`);
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'Escape') {
+      setIsOpen(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    if (!showDropdown || results.length === 0) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedIndex((currentIndex) => Math.min(currentIndex + 1, results.length - 1));
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedIndex((currentIndex) => Math.max(currentIndex - 1, -1));
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      if (selectedIndex >= 0) {
+        event.preventDefault();
+        handleSelect(results[selectedIndex].ticker);
+        return;
+      }
+
+      if (selectedIndex === -1 && results.length === 1) {
+        event.preventDefault();
+        handleSelect(results[0].ticker);
+      }
+    }
+  }
 
   return (
-    <section className="text-center pt-16 pb-8 px-4">
-      <h1 className="font-display text-4xl font-medium text-text-primary mb-6 tracking-tight">
-        Search any S&amp;P 500 company
-      </h1>
+    <div className="relative w-full max-w-[600px]" ref={wrapperRef}>
+      <div className="relative flex items-center">
+        <span className="absolute left-4 text-text-tertiary pointer-events-none flex items-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </span>
 
-      <div className="relative max-w-[600px] mx-auto" ref={wrapperRef}>
-        <div className="relative flex items-center">
-          <span className="absolute left-4 text-text-tertiary pointer-events-none flex items-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-          </span>
-
-          <input
-            className="w-full bg-elevated border border-border rounded-lg pl-12 pr-4 py-3 text-lg text-text-primary font-body placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-muted transition-colors"
-            type="text"
-            placeholder="Search by ticker or company name..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
+        <input
+          className="w-full bg-elevated border border-border rounded-lg pl-12 pr-4 py-3 text-lg text-text-primary font-body placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-muted transition-colors"
+          type="text"
+          placeholder="Search by ticker or company name..."
+          value={query}
+          aria-expanded={showDropdown}
+          aria-activedescendant={
+            showDropdown && selectedIndex >= 0
+              ? `search-result-${results[selectedIndex].ticker}`
+              : undefined
+          }
+          aria-controls={showDropdown ? 'company-search-results' : undefined}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setIsOpen(true);
+            setSelectedIndex(-1);
+          }}
+          onFocus={() => {
+            if (debouncedQuery.length >= 1) {
               setIsOpen(true);
-            }}
-            onFocus={() => {
-              if (debouncedQuery.length >= 1) setIsOpen(true);
-            }}
-          />
-        </div>
+            }
+          }}
+          onKeyDown={handleKeyDown}
+        />
+      </div>
 
-        {showDropdown && (
-          <div className="absolute top-full left-0 right-0 bg-surface border border-border rounded-lg mt-1 shadow-lg z-50 max-h-[300px] overflow-y-auto">
-            {isLoading && (
-              <div className="px-4 py-3 text-center text-text-tertiary text-sm">
-                Searching...
-              </div>
-            )}
+      {showDropdown && (
+        <div
+          id="company-search-results"
+          role="listbox"
+          className="absolute top-full left-0 right-0 bg-surface border border-border rounded-lg mt-1 shadow-lg z-50 max-h-[300px] overflow-y-auto"
+        >
+          {isLoading && (
+            <div className="px-4 py-3 text-center text-text-tertiary text-sm">
+              Searching...
+            </div>
+          )}
 
-            {!isLoading && results.length === 0 && (
-              <div className="px-4 py-3 text-center text-text-tertiary text-sm">
-                No companies match
-              </div>
-            )}
+          {!isLoading && results.length === 0 && (
+            <div className="px-4 py-3 text-center text-text-tertiary text-sm">
+              No companies match
+            </div>
+          )}
 
-            {!isLoading &&
-              results.map((company) => (
+          {!isLoading &&
+            results.map((company, index) => {
+              const isSelected = selectedIndex === index;
+
+              return (
                 <button
                   key={company.ticker}
+                  id={`search-result-${company.ticker}`}
+                  ref={(element) => {
+                    itemRefs.current[index] = element;
+                  }}
                   type="button"
-                  className="w-full px-4 py-3 hover:bg-elevated cursor-pointer flex items-center gap-3 text-text-primary transition-colors text-left"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`w-full px-4 py-3 cursor-pointer flex items-center gap-3 text-text-primary transition-colors text-left ${
+                    isSelected ? 'bg-elevated' : 'hover:bg-elevated'
+                  }`}
                   aria-label={`${company.ticker} ${company.name}`}
+                  onMouseEnter={() => setSelectedIndex(index)}
                   onClick={() => handleSelect(company.ticker)}
                 >
                   <span className="font-data font-bold text-accent text-sm min-w-[60px]">
@@ -133,55 +267,103 @@ function SearchBar() {
                     )}
                   </span>
                 </button>
-              ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 text-sm text-text-tertiary">
-        <span className="mr-1">Try:</span>
-        {QUICK_TICKERS.map((ticker, i) => (
-          <span key={ticker}>
-            <button
-              className="font-data text-sm font-medium text-text-tertiary hover:text-accent cursor-pointer bg-transparent border-none px-1.5 py-0.5 rounded transition-colors"
-              onClick={() => handleQuickClick(ticker)}
-            >
-              {ticker}
-            </button>
-            {i < QUICK_TICKERS.length - 1 && (
-              <span className="text-text-tertiary mx-0.5 select-none">&middot;</span>
-            )}
-          </span>
-        ))}
-      </div>
-
-      <div className="mt-6 font-body text-sm text-text-secondary">
-        Normalized SEC financial data for 500 S&amp;P companies.
-        <Link
-          to="/screener"
-          className="ml-2 text-accent hover:text-accent-hover transition-colors"
-        >
-          Open screener
-        </Link>
-        <span className="mx-2 text-text-tertiary">/</span>
-        <Link
-          to="/about"
-          className="text-accent hover:text-accent-hover transition-colors"
-        >
-          Methodology
-        </Link>
-      </div>
-    </section>
+              );
+            })}
+        </div>
+      )}
+    </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  LandingPage Root                                                   */
-/* ------------------------------------------------------------------ */
 export default function LandingPage() {
+  const navigate = useNavigate();
+  const { data: liveCompanies, isLoading, isError } = useQuery({
+    queryKey: ['landing', 'live-companies'],
+    queryFn: fetchLiveCompanies,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const showLiveStrip = !isLoading && !isError && (liveCompanies?.length ?? 0) > 0;
+
   return (
-    <main className="min-h-[calc(100vh-56px-80px)]">
-      <SearchBar />
+    <main className="min-h-[calc(100vh-56px-80px)] px-4">
+      <div className="mx-auto flex max-w-4xl flex-col items-center gap-6 py-16 text-center">
+        <div className="flex flex-col items-center gap-4">
+          <h1 className="font-display text-[3.5rem] leading-none font-medium tracking-tight text-text-primary">
+            StockPulse
+          </h1>
+          <p className="max-w-[500px] font-body text-lg text-text-secondary">
+            Financials, valuations, and AI analysis for every S&amp;P 500 company
+          </p>
+        </div>
+
+        <SearchBar />
+
+        <div className="flex flex-wrap justify-center gap-2">
+          {QUICK_TICKERS.map((ticker) => (
+            <button
+              key={ticker}
+              type="button"
+              className="rounded-full border border-border bg-elevated px-3 py-1.5 font-data text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-hover"
+              onClick={() => navigate(`/stock/${ticker}`)}
+            >
+              {ticker}
+            </button>
+          ))}
+        </div>
+
+        <p className="font-data text-sm text-text-tertiary">
+          500 companies · 30yr SEC filings · Updated daily
+        </p>
+
+        {showLiveStrip && (
+          <div className="w-full overflow-x-auto">
+            <div className="mx-auto flex min-w-max items-center justify-center gap-4 px-2">
+              {liveCompanies.map((company, index) => (
+                <React.Fragment key={company.ticker}>
+                  {index > 0 && (
+                    <span className="font-data text-sm text-text-tertiary" aria-hidden="true">
+                      ·
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 font-data text-sm transition-colors hover:text-accent"
+                    onClick={() => navigate(`/stock/${company.ticker}`)}
+                  >
+                    <span className="font-bold text-accent">{company.ticker}</span>
+                    <span className="text-text-primary">{formatPrice(company.currentPrice)}</span>
+                    {formatChange(company.changePercent) && (
+                      <span
+                        className={
+                          Number(company.changePercent) >= 0 ? 'text-up' : 'text-down'
+                        }
+                      >
+                        {formatChange(company.changePercent)}
+                      </span>
+                    )}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm">
+          <Link
+            to="/screener"
+            className="font-body text-accent transition-colors hover:text-accent-hover"
+          >
+            Open screener →
+          </Link>
+          <Link
+            to="/about"
+            className="font-body text-accent transition-colors hover:text-accent-hover"
+          >
+            About →
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }
