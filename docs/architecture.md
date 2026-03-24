@@ -118,6 +118,7 @@ Responsibilities:
 
 Current M4 behavior:
 - `update_prices` maintains `Company.current_price`, `market_cap`, `week_52_high`, `week_52_low`, `shares_outstanding`, and `quote_updated_at`
+- `update_prices` now uses a bounded worker pool so the quote sweep stays deterministic but no longer refreshes the full universe strictly ticker-by-ticker
 - `/api/companies/:ticker/prices` reads through `PriceCache`
 - on cache miss or expired cache, the endpoint refreshes that range from `yfinance`, stores it in `PriceCache`, and returns the cached payload
 - if the refresh fails but an older cached range exists, the stale cached payload is served with `stale=true`
@@ -136,6 +137,7 @@ Read APIs exist for:
 Design rules:
 - public browsing endpoints stay open
 - screener reads `MetricSnapshot`, not raw fact joins
+- screener filtering and valuation-default calculation live behind helper modules rather than growing the HTTP view layer
 - financial endpoints expose canonical values only
 - financial and valuation visuals use dashboard-style charts, while the dedicated price surface uses a separate market-chart library
 - valuation inputs support two calculator modes: `Earnings` and `Cash Flow`, where `Cash Flow` uses free cash flow per share
