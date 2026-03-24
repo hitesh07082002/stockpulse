@@ -27,12 +27,6 @@
 **Depends on:** `enrich_company_metadata` being in place and run at least once.
 **Status:** Not started
 
-### Mobile Screener Redesign
-**What:** Replace the current phone-sized screener layout with a mobile-native experience instead of a stacked filter column plus compressed desktop table.
-**Why:** The Mar 24, 2026 production design review found that `/screener` still feels like a squeezed desktop page on mobile, even after landing/shell polish fixes. This is the main remaining design gap before the app feels fully intentional across breakpoints.
-**Depends on:** Current screener implementation in [`frontend/src/pages/ScreenerPage.jsx`](../frontend/src/pages/ScreenerPage.jsx).
-**Status:** Not started
-
 ## Post-V1
 
 ### V2 Upgrade Path Documentation

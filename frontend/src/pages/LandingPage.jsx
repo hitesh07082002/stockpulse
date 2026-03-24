@@ -299,7 +299,7 @@ export default function LandingPage() {
   const showLiveStrip = !isLoading && !isError && (liveCompanies?.length ?? 0) > 0;
 
   return (
-    <main className="min-h-[calc(100vh-56px-80px)] px-4">
+    <section className="min-h-[var(--shell-content-min-height)] px-4">
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-6 py-16 text-center">
         <div className="flex flex-col items-center gap-4">
           <h1 className="font-display text-[3.5rem] leading-none font-medium tracking-tight text-text-primary">
@@ -371,6 +371,6 @@ export default function LandingPage() {
           </Link>
         </div>
       </div>
-    </main>
+    </section>
   );
 }

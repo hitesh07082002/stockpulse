@@ -95,7 +95,7 @@ function StockDetailPage() {
   // Treat an empty result or backend 404 as the same search-facing not-found state.
   if (isNotFound) {
     return (
-      <div className="flex flex-col min-h-[calc(100vh-56px-80px)]">
+      <div className="flex flex-col min-h-[var(--shell-content-min-height)]">
         <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
           <span className="font-data text-4xl font-bold text-text-tertiary">
             404
@@ -117,7 +117,7 @@ function StockDetailPage() {
   // Network / server error
   if (isError) {
     return (
-      <div className="flex flex-col min-h-[calc(100vh-56px-80px)]">
+      <div className="flex flex-col min-h-[var(--shell-content-min-height)]">
         <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
           <p className="font-body text-base text-red-500">
             {error?.message || 'Something went wrong. Please try again.'}
@@ -140,9 +140,9 @@ function StockDetailPage() {
   const ActiveComponent = TABS.find((t) => t.key === activeTab)?.Component;
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-56px-80px)]">
+    <div className="flex flex-col min-h-[var(--shell-content-min-height)]">
       {/* ---- Persistent Company Header ---- */}
-      <div className="sticky top-14 z-40 bg-base border-b border-border px-4 py-4">
+      <div className="sticky top-[var(--shell-header-height)] z-40 bg-base border-b border-border px-4 py-4">
         {isLoading ? (
           <div className="flex flex-col gap-3 pb-4">
             <div className="skeleton h-8 w-48 rounded" />

@@ -32,6 +32,18 @@
   --color-info: #3B82F6;
 }
 
+:root {
+  --shell-header-height: 64px;
+  --shell-footer-height: 56px;
+  --shell-content-min-height: calc(100vh - var(--shell-header-height) - var(--shell-footer-height));
+}
+
+@media (min-width: 640px) {
+  :root {
+    --shell-header-height: 56px;
+  }
+}
+
 /* Light mode overrides */
 [data-theme="light"] {
   --color-base: #FAFAFA;

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import AuthModal from './auth/AuthModal';
 import { useAuth } from './auth/useAuth';
 
 function Layout({ children }) {
-  const navigate = useNavigate();
   const {
     authNotice,
     isAuthenticated,
@@ -34,12 +33,15 @@ function Layout({ children }) {
 
   const userLabel = user?.name || user?.email || 'Signed in';
   const userInitial = (userLabel || 'U').trim().charAt(0).toUpperCase();
+  const desktopNavLinkClasses = 'hidden font-body text-sm font-medium text-text-secondary no-underline transition-colors hover:text-text-primary md:inline-flex';
+  const iconLinkClasses = 'flex h-11 w-11 items-center justify-center rounded-md border border-transparent p-0 text-text-secondary transition-colors hover:border-border hover:text-text-primary md:hidden';
+  const iconButtonClasses = 'flex h-11 w-11 items-center justify-center rounded-md border border-border p-0 text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary';
 
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-surface backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4 sm:h-14">
+        <div className="mx-auto flex h-[var(--shell-header-height)] max-w-[1280px] items-center justify-between gap-3 px-4">
           <Link
             to="/"
             className="font-display font-bold text-xl text-accent no-underline tracking-tight"
@@ -47,7 +49,7 @@ function Layout({ children }) {
             StockPulse
           </Link>
 
-          <nav className="flex items-center gap-2 sm:gap-4 md:gap-6">
+          <nav className="flex items-center gap-1.5 sm:gap-2 md:gap-6">
             {!isBootstrapping && authNotice && (
               <button
                 type="button"
@@ -65,20 +67,20 @@ function Layout({ children }) {
             )}
             <Link
               to="/screener"
-              className="hidden font-body text-sm font-medium text-text-secondary no-underline transition-colors hover:text-text-primary md:inline"
+              className={desktopNavLinkClasses}
             >
               Screener
             </Link>
             <Link
               to="/about"
-              className="hidden font-body text-sm font-medium text-text-secondary no-underline transition-colors hover:text-text-primary md:inline"
+              className={desktopNavLinkClasses}
             >
               About
             </Link>
-            <button
-              onClick={() => navigate('/screener')}
-              className="flex h-11 w-11 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-secondary transition-colors hover:text-text-primary"
-              aria-label="Search stocks"
+            <Link
+              to="/screener"
+              className={iconLinkClasses}
+              aria-label="Open screener"
             >
               <svg
                 width="18"
@@ -93,10 +95,30 @@ function Layout({ children }) {
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-            </button>
+            </Link>
+            <Link
+              to="/about"
+              className={iconLinkClasses}
+              aria-label="About StockPulse"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+            </Link>
             <button
               onClick={toggleTheme}
-              className="flex h-11 w-11 items-center justify-center rounded-md border border-border p-0 text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
+              className={iconButtonClasses}
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? (
@@ -174,12 +196,12 @@ function Layout({ children }) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-[1280px] w-full mx-auto px-4 py-6">
+      <main className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-4 py-6">
         {children}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border py-4 text-center">
+      <footer className="flex min-h-[var(--shell-footer-height)] items-center justify-center border-t border-border px-4 text-center">
         <span className="font-body text-sm text-text-tertiary">
           Powered by SEC EDGAR + AI
         </span>
