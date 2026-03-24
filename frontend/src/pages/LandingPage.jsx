@@ -45,6 +45,22 @@ function getDayChangePercent(points) {
   return ((latest - previous) / previous) * 100;
 }
 
+function normalizeSelectedIndex(index, resultCount) {
+  if (resultCount === 0) {
+    return -1;
+  }
+
+  if (index < -1) {
+    return -1;
+  }
+
+  if (index >= resultCount) {
+    return resultCount - 1;
+  }
+
+  return index;
+}
+
 async function fetchLiveCompanies() {
   const screenerPayload = await fetchScreener({
     sort: 'market_cap',
@@ -90,6 +106,7 @@ function SearchBar() {
   const { data, isLoading } = useCompanySearch(debouncedQuery);
   const results = data?.results ?? data ?? [];
   const showDropdown = isOpen && debouncedQuery.length >= 1;
+  const activeIndex = normalizeSelectedIndex(selectedIndex, results.length);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -104,24 +121,14 @@ function SearchBar() {
   }, []);
 
   useEffect(() => {
-    setSelectedIndex((currentIndex) => {
-      if (results.length === 0) {
-        return -1;
-      }
-
-      return Math.min(currentIndex, results.length - 1);
-    });
-  }, [results.length]);
-
-  useEffect(() => {
-    if (!showDropdown || selectedIndex < 0) {
+    if (!showDropdown || activeIndex < 0) {
       return;
     }
 
-    itemRefs.current[selectedIndex]?.scrollIntoView({
+    itemRefs.current[activeIndex]?.scrollIntoView({
       block: 'nearest',
     });
-  }, [selectedIndex, showDropdown]);
+  }, [activeIndex, showDropdown]);
 
   function handleSelect(ticker) {
     setQuery('');
@@ -144,20 +151,26 @@ function SearchBar() {
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedIndex((currentIndex) => Math.min(currentIndex + 1, results.length - 1));
+      setSelectedIndex((currentIndex) => {
+        const normalizedIndex = normalizeSelectedIndex(currentIndex, results.length);
+        return Math.min(normalizedIndex + 1, results.length - 1);
+      });
       return;
     }
 
     if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedIndex((currentIndex) => Math.max(currentIndex - 1, -1));
+      setSelectedIndex((currentIndex) => {
+        const normalizedIndex = normalizeSelectedIndex(currentIndex, results.length);
+        return Math.max(normalizedIndex - 1, -1);
+      });
       return;
     }
 
     if (event.key === 'Enter') {
-      if (selectedIndex >= 0) {
+      if (activeIndex >= 0) {
         event.preventDefault();
-        handleSelect(results[selectedIndex].ticker);
+        handleSelect(results[activeIndex].ticker);
         return;
       }
 
@@ -195,8 +208,8 @@ function SearchBar() {
           value={query}
           aria-expanded={showDropdown}
           aria-activedescendant={
-            showDropdown && selectedIndex >= 0
-              ? `search-result-${results[selectedIndex].ticker}`
+            showDropdown && activeIndex >= 0
+              ? `search-result-${results[activeIndex].ticker}`
               : undefined
           }
           aria-controls={showDropdown ? 'company-search-results' : undefined}
@@ -234,7 +247,7 @@ function SearchBar() {
 
           {!isLoading &&
             results.map((company, index) => {
-              const isSelected = selectedIndex === index;
+              const isSelected = activeIndex === index;
 
               return (
                 <button
