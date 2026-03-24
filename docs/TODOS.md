@@ -10,8 +10,8 @@
 
 ### Protect `main` With Required Checks
 **What:** Turn on GitHub branch protection for `main` and require backend, frontend, and Playwright smoke checks before merge.
-**Why:** The CI pipeline is in place, but the repo is not fully launch-safe until `main` is protected from unverified merges.
-**Depends on:** CI staying green on the current rewrite branch.
+**Why:** CI and deploy are in place, but the repo is not fully merge-safe until `main` is protected from unverified pushes.
+**Depends on:** The current `Backend checks`, `Frontend checks`, and `Playwright smoke` workflows remaining green.
 **Status:** Not started
 
 ### SEC Fair-Access Verification
@@ -24,7 +24,7 @@
 **What:** Curate the small residual override set for `description`, `website`, and `exchange` after the first automated metadata backfill. Current known gap: `FISV`.
 **Why:** The enrichment command is landed, but the last few low-quality or missing Yahoo records should be fixed in the tracked override CSV so the product reaches effectively complete metadata coverage.
 **Plan:** See [`docs/company-metadata-ingestion-plan.md`](./company-metadata-ingestion-plan.md).
-**Depends on:** `enrich_company_metadata` being in place and run at least once.
+**Depends on:** `enrich_company_metadata` being in place, with the weekly cron refresh already wired in production.
 **Status:** Not started
 
 ## Post-V1

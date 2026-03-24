@@ -1,8 +1,8 @@
 # Design System — StockPulse
 
-**Version:** Scratch-build V1
+**Version:** Live V1 baseline
 **Date:** Mar 22, 2026
-**Scope:** Visual and interaction source of truth for the rewrite
+**Scope:** Visual and interaction baseline for the current product. Use this with the shipped UI when small polish decisions have evolved since the original design pass.
 
 ## Product Context
 - **What this is:** Public-first stock analysis platform built on normalized SEC financial data
@@ -519,5 +519,5 @@ STEP | USER DOES                    | USER FEELS               | DESIGN SUPPORTS
 | Mar 20, 2026 | Teal as primary accent | Distinct from common fintech blues and does not conflict with market red/green |
 | Mar 20, 2026 | JetBrains Mono for financial data | Improves scan speed and number alignment |
 | Mar 20, 2026 | Dark mode as canonical theme | Better fit for a serious finance dashboard |
-| Mar 22, 2026 | Added explicit data-viz contract | Prevents chart and table drift during the rewrite |
+| Mar 22, 2026 | Added explicit data-viz contract | Prevents chart and table drift during the live V1 polish cycle |
 | Mar 22, 2026 | Restored low-friction auth to the V1 design | Keeps browsing public while supporting account-based AI upgrades |
