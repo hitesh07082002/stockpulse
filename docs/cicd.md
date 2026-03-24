@@ -123,9 +123,9 @@ Build once, deploy many.
 
 Recommended approach:
 - build immutable Docker images tagged by commit SHA
-- also publish `latest` for the production server's steady-state pull target
 - serve the React SPA from the same Django image via WhiteNoise
 - never rebuild the same revision twice for production
+- production deploys must reference the exact commit SHA that passed CI; no mutable `latest` tag in the deploy path
 
 ## 4.3 Environment Flow
 
@@ -134,8 +134,10 @@ Current V1 environment chain:
 1. pull request CI on GitHub Actions
 2. merge or push to `main`
 3. GitHub Actions builds and pushes the production image to GHCR
-4. the deploy workflow SSHes to the server, runs `docker compose pull`, `docker compose up -d --remove-orphans`, then runs `python manage.py migrate --noinput`
-5. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
+4. the deploy workflow SSHes to the server, writes `APP_IMAGE_TAG=<commit-sha>` into the production `.env`, then runs `docker compose pull web` and `docker compose up -d --remove-orphans` with that exact SHA
+5. the workflow runs `python manage.py check --deploy --fail-level WARNING`, then `python manage.py migrate --noinput`
+6. the workflow verifies that the running `stockpulse-web` container was started from the expected SHA-tagged image
+7. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
 
 There is no separate staging environment in the current V1 deployment contract.
 
@@ -175,8 +177,8 @@ For gstack, the most useful deployment-adjacent skills later are:
 ## 4.6 Rollback Strategy
 
 Rollback must be boring:
-- keep the previous deployable image available
-- allow one-click or one-command redeploy of the last known good release
+- keep previous SHA-tagged deployable images available in GHCR
+- allow one-command redeploy of the last known good SHA by updating `APP_IMAGE_TAG`
 - avoid schema changes that make rollback impossible in the same release
 - if a migration is not safely reversible, document the forward-fix path before deploy
 

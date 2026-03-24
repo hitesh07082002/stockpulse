@@ -165,6 +165,7 @@ nano /opt/stockpulse/.env
 Paste this (fill in real values):
 ```
 STOCKPULSE_ENV=production
+APP_IMAGE_TAG=SET_BY_DEPLOY_WORKFLOW
 SECRET_KEY=GENERATE_ONE_BELOW
 DEBUG=False
 DATABASE_URL=postgres://stockpulse:YOUR_DB_PASSWORD@db:5432/stockpulse
@@ -282,6 +283,7 @@ git push origin main
 ```
 
 GitHub Actions will: build image → push to GHCR → SSH deploy → migrate → health check.
+The deploy workflow also pins `APP_IMAGE_TAG` to the exact commit SHA that passed CI and verifies that `stockpulse-web` is running that same SHA-tagged image.
 
 Important note:
 - the deploy health check hits Gunicorn on `127.0.0.1:8000`, but it must send the production `Host` header plus `X-Forwarded-Proto: https`
@@ -377,13 +379,13 @@ sudo certbot --nginx -d stockpulse.hiteshsadhwani.xyz
 ### Roll back to a previous image
 If a release is bad and the migration is backward-compatible:
 1. Find the previous good commit SHA on GitHub
-2. Edit `/opt/stockpulse/docker-compose.yml` on the server and change the `web` image tag from `latest` to that SHA tag
+2. Update `APP_IMAGE_TAG` in `/opt/stockpulse/.env` to that SHA
 3. Run:
 
 ```bash
 cd /opt/stockpulse
-docker compose pull
-docker compose up -d --remove-orphans
+APP_IMAGE_TAG=<GOOD_SHA> docker compose pull web
+APP_IMAGE_TAG=<GOOD_SHA> docker compose up -d --remove-orphans
 ```
 
 After the rollback, revisit the app health and smoke checks before considering the incident closed.
@@ -415,7 +417,8 @@ docker compose logs -f
 docker compose restart
 
 # Rebuild and restart
-docker compose pull && docker compose up -d --remove-orphans
+APP_IMAGE_TAG=$(grep '^APP_IMAGE_TAG=' .env | cut -d= -f2) docker compose pull web && \
+APP_IMAGE_TAG=$(grep '^APP_IMAGE_TAG=' .env | cut -d= -f2) docker compose up -d --remove-orphans
 
 # Run Django management command
 docker exec stockpulse-web python manage.py <command>
