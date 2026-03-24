@@ -317,7 +317,7 @@ export default function LandingPage() {
             <button
               key={ticker}
               type="button"
-              className="rounded-full border border-border bg-elevated px-3 py-1.5 font-data text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-hover"
+              className="min-h-11 rounded-full border border-border bg-elevated px-4 py-2 font-data text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-hover"
               onClick={() => navigate(`/stock/${ticker}`)}
             >
               {ticker}
@@ -359,13 +359,13 @@ export default function LandingPage() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm">
           <Link
             to="/screener"
-            className="font-body text-accent transition-colors hover:text-accent-hover"
+            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
           >
             Open screener →
           </Link>
           <Link
             to="/about"
-            className="font-body text-accent transition-colors hover:text-accent-hover"
+            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
           >
             About →
           </Link>
