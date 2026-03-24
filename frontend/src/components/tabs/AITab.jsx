@@ -1,15 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from '../../lib/remarkGfm';
-import {
-  normalizeCopilotHistory,
-  sendChatMessage,
-} from '../../utils/api';
+import React, { useEffect, useRef } from 'react';
 import { useAuth } from '../auth/useAuth';
-
-/* ────────────────────────────────────────────
-   Suggested Prompts
-   ──────────────────────────────────────────── */
+import { CopilotMarkdown } from './ai/CopilotMarkdown';
+import { useCopilotChat } from './ai/useCopilotChat';
 
 const SUGGESTED_PROMPTS = [
   'Why did revenue change in 2020?',
@@ -18,348 +10,58 @@ const SUGGESTED_PROMPTS = [
   'Compare margins to sector average',
 ];
 
-function flattenMarkdownText(children) {
-  return React.Children.toArray(children)
-    .map((child) => {
-      if (typeof child === 'string') {
-        return child;
-      }
-      if (typeof child === 'number') {
-        return String(child);
-      }
-      if (React.isValidElement(child)) {
-        return flattenMarkdownText(child.props.children);
-      }
-      return '';
-    })
-    .join('');
-}
-
-function normalizeTableCells(line) {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
-}
-
-function parseMarkdownTable(content) {
-  if (!content || !content.includes('|')) {
-    return null;
-  }
-
-  const lines = content
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 3) {
-    return null;
-  }
-
-  const separatorPattern = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/;
-  if (!separatorPattern.test(lines[1])) {
-    return null;
-  }
-
-  const header = normalizeTableCells(lines[0]);
-  if (header.length < 2) {
-    return null;
-  }
-
-  const rows = lines.slice(2).map(normalizeTableCells);
-  if (!rows.length || rows.some((row) => row.length !== header.length)) {
-    return null;
-  }
-
-  return { header, rows };
-}
-
-function MarkdownParagraph({ children }) {
-  const content = flattenMarkdownText(children).trim();
-  const table = parseMarkdownTable(content);
-
-  if (!table) {
-    return <p>{children}</p>;
-  }
-
-  return (
-    <div className="my-3 overflow-x-auto rounded-xl border border-border bg-surface">
-      <table className="min-w-full border-collapse text-left text-sm">
-        <thead className="bg-elevated text-text-secondary">
-          <tr>
-            {table.header.map((cell) => (
-              <th key={cell} className="border-b border-border px-3 py-2 font-data font-medium">
-                {cell}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.rows.map((row, rowIndex) => (
-            <tr key={`${rowIndex}-${row.join('|')}`} className="border-b border-border last:border-b-0">
-              {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-3 py-2 font-data text-text-primary">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────
-   AITab Component
-   ──────────────────────────────────────────── */
-
 function AITab({ ticker, company }) {
   const {
     isAuthenticated,
     limits,
     openAuthModal,
   } = useAuth();
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState('');
-  const [errorCode, setErrorCode] = useState('');
-  const [errorStatus, setErrorStatus] = useState(null);
-  const [streamMeta, setStreamMeta] = useState(null);
-  const [remainingQuota, setRemainingQuota] = useState(null);
+  const {
+    error,
+    errorCode,
+    errorStatus,
+    handleKeyDown,
+    handleSend,
+    input,
+    isStreaming,
+    messages,
+    remainingQuota,
+    setInput,
+    streamMeta,
+  } = useCopilotChat({ ticker });
 
   const messageEndRef = useRef(null);
-  const messageIdRef = useRef(0);
 
-  /* Auto-scroll to bottom on new messages / streaming updates */
   useEffect(() => {
     if (messageEndRef.current) {
       messageEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  function nextMessageId() {
-    messageIdRef.current += 1;
-    return `${Date.now()}-${messageIdRef.current}`;
-  }
-
-  function createMessage(role, content, status = 'complete') {
-    return {
-      id: nextMessageId(),
-      role,
-      content,
-      status,
-    };
-  }
-
-  function updateLastAssistantMessage(updater) {
-    setMessages((prev) => {
-      if (!prev.length) {
-        return prev;
-      }
-
-      const updated = [...prev];
-      const lastIndex = updated.length - 1;
-      const lastMessage = updated[lastIndex];
-      if (!lastMessage || lastMessage.role !== 'assistant') {
-        return prev;
-      }
-
-      updated[lastIndex] = updater(lastMessage);
-      return updated;
-    });
-  }
-
-  function settleAssistantMessage() {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (!last || last.role !== 'assistant') {
-        return prev;
-      }
-
-      if (!last.content) {
-        return prev.slice(0, -1);
-      }
-
-      const updated = [...prev];
-      updated[updated.length - 1] = {
-        ...last,
-        status: 'complete',
-      };
-      return updated;
-    });
-  }
-
-  function getStreamRemainingQuota(payload) {
-    const candidates = [
-      payload?.remainingQuota,
-      payload?.remaining_quota,
-      payload?.remaining_daily,
-      payload?.remaining,
-    ];
-
-    for (const candidate of candidates) {
-      if (candidate === undefined || candidate === null || candidate === '') {
-        continue;
-      }
-
-      const value = Number(candidate);
-      if (Number.isFinite(value)) {
-        return value;
-      }
-    }
-
-    if (payload?.limit !== undefined && payload?.used !== undefined) {
-      const limit = Number(payload.limit);
-      const used = Number(payload.used);
-      if (Number.isFinite(limit) && Number.isFinite(used)) {
-        return Math.max(limit - used, 0);
-      }
-    }
-
-    return null;
-  }
-
-  function buildConversationHistory() {
-    return normalizeCopilotHistory(messages);
-  }
-
-  /* ---- Send handler ---- */
-  async function handleSend(messageText) {
-    const text = (messageText || '').trim();
-    if (!text || isStreaming) return;
-
-    setError('');
-    setErrorCode('');
-    setErrorStatus(null);
-    setStreamMeta(null);
-    setInput('');
-
-    const history = buildConversationHistory();
-
-    /* Append user message and an empty assistant placeholder */
-    setMessages((prev) => [
-      ...prev,
-      createMessage('user', text),
-      createMessage('assistant', '', 'streaming'),
-    ]);
-
-    setIsStreaming(true);
-
-    try {
-      const stream = sendChatMessage(ticker, text, history);
-      for await (const event of stream) {
-        if (!event || typeof event !== 'object') {
-          continue;
-        }
-
-        if (event.type === 'meta') {
-          setStreamMeta(event);
-          const streamRemaining = getStreamRemainingQuota(event);
-          if (streamRemaining !== null) {
-            setRemainingQuota(streamRemaining);
-          }
-          continue;
-        }
-
-        if (event.type === 'text') {
-          if (!event.content) {
-            continue;
-          }
-
-          updateLastAssistantMessage((message) => ({
-            ...message,
-            content: `${message.content}${event.content}`,
-          }));
-          continue;
-        }
-
-        if (event.type === 'done') {
-          const streamRemaining = getStreamRemainingQuota(event);
-          if (streamRemaining !== null) {
-            setRemainingQuota(streamRemaining);
-          }
-          settleAssistantMessage();
-          return;
-        }
-
-        if (event.type === 'error') {
-          setError(event.message || 'Something went wrong. Please try again.');
-          setErrorCode(event.code || '');
-          setErrorStatus(event.status || null);
-          const streamRemaining = getStreamRemainingQuota(event);
-          if (streamRemaining !== null) {
-            setRemainingQuota(streamRemaining);
-          }
-          settleAssistantMessage();
-          return;
-        }
-      }
-    } catch (err) {
-      const payload = err?.payload || {};
-      const streamRemaining = getStreamRemainingQuota(payload);
-      if (streamRemaining !== null) {
-        setRemainingQuota(streamRemaining);
-      }
-
-      const fallbackMessage = err?.message || 'Something went wrong. Please try again.';
-      setError(fallbackMessage);
-      setErrorCode(payload?.code || (err?.status === 429 ? 'quota_exhausted' : ''));
-      setErrorStatus(err?.status || null);
-      settleAssistantMessage();
-    } finally {
-      setIsStreaming(false);
-    }
-  }
-
-  /* ---- Input key handler ---- */
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend(input);
-    }
-  }
-
-  /* ---- Derived state ---- */
   const hasMessages = messages.length > 0;
   const canSend = input.trim().length > 0 && !isStreaming;
   const companyName = (company && company.name) || ticker;
   const anonymousLimit = limits?.anonymous_daily || 10;
   const authenticatedLimit = limits?.authenticated_daily || 50;
   const currentLimit = isAuthenticated ? authenticatedLimit : anonymousLimit;
-  const hasQuotaSignal = remainingQuota !== null;
-  const quotaLabel = hasQuotaSignal
-    ? `${remainingQuota} left today`
-    : null;
+  const quotaLabel = remainingQuota !== null ? `${remainingQuota} left today` : null;
   const shouldShowUpgradePrompt = !isAuthenticated && (
     errorStatus === 429 || /limit|quota/i.test(`${errorCode} ${error}`)
   );
-  const metaSummaryParts = [];
-
-  if (streamMeta?.company_name) {
-    metaSummaryParts.push(streamMeta.company_name);
-  }
-
-  if (streamMeta?.quote_freshness) {
-    metaSummaryParts.push(streamMeta.quote_freshness);
-  }
-
-  if (streamMeta?.coverage_summary) {
-    metaSummaryParts.push(streamMeta.coverage_summary);
-  }
+  const metaSummaryParts = [
+    streamMeta?.company_name,
+    streamMeta?.quote_freshness,
+    streamMeta?.coverage_summary,
+  ].filter(Boolean);
 
   return (
-    <div className="flex flex-col h-[600px] bg-surface border border-border rounded-lg overflow-hidden">
-      {/* ===== Header ===== */}
-      <div className="px-4 py-3 border-b border-border flex flex-col gap-2">
-        <div className="flex justify-between items-start gap-3">
+    <div className="flex h-[600px] flex-col overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="flex flex-col gap-2 border-b border-border px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
           <span className="font-display text-lg font-semibold text-text-primary">
-            Ask about {companyName}'s financials
+            Ask about {companyName}&apos;s financials
           </span>
-          <span className="text-xs font-data text-text-tertiary bg-elevated px-2 py-1 rounded-full whitespace-nowrap">
+          <span className="whitespace-nowrap rounded-full bg-elevated px-2 py-1 text-xs font-data text-text-tertiary">
             {isAuthenticated
               ? `Signed in: ${currentLimit}/day`
               : `Free: ${anonymousLimit}/day · Sign in: ${authenticatedLimit}/day`}
@@ -377,17 +79,16 @@ function AITab({ ticker, company }) {
         )}
       </div>
 
-      {/* ===== Suggested prompts (when empty) ===== */}
       {!hasMessages && (
-        <div className="flex flex-col items-center justify-center flex-1 p-8 gap-4">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
           <span className="font-display text-lg font-bold text-text-primary">
             Get started
           </span>
-          <div className="flex flex-wrap gap-2 justify-center max-w-[600px]">
+          <div className="flex max-w-[600px] flex-wrap justify-center gap-2">
             {SUGGESTED_PROMPTS.map((prompt) => (
               <button
                 key={prompt}
-                className="px-4 py-2 bg-elevated border border-border rounded-full text-sm text-text-secondary hover:text-accent hover:border-accent cursor-pointer transition"
+                className="cursor-pointer rounded-full border border-border bg-elevated px-4 py-2 text-sm text-text-secondary transition hover:border-accent hover:text-accent"
                 onClick={() => handleSend(prompt)}
               >
                 {prompt}
@@ -406,48 +107,38 @@ function AITab({ ticker, company }) {
         </div>
       )}
 
-      {/* ===== Message area ===== */}
       {hasMessages && (
-        <div
-          className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col min-h-0"
-        >
-          {messages.map((msg, idx) => {
-            const isUser = msg.role === 'user';
-            const isAssistant = msg.role === 'assistant';
-            const isStreamingAssistant =
-              isAssistant && idx === messages.length - 1 && isStreaming;
+        <div className="flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto p-4">
+          {messages.map((message, index) => {
+            const isUser = message.role === 'user';
+            const isAssistant = message.role === 'assistant';
+            const isStreamingAssistant = isAssistant && index === messages.length - 1 && isStreaming;
 
-            if (isAssistant && !msg.content && !isStreamingAssistant) {
+            if (isAssistant && !message.content && !isStreamingAssistant) {
               return null;
             }
 
             return (
               <div
-                key={idx}
-                className={`flex w-full ${
-                  isUser ? 'justify-end' : 'justify-start'
-                }`}
+                key={message.id}
+                className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={
-                  isUser
-                      ? 'bg-accent-muted rounded-2xl px-4 py-2 ml-auto max-w-[80%] text-text-primary'
-                      : 'bg-elevated rounded-2xl px-4 py-3 mr-auto max-w-[80%] text-text-primary'
-                  }
+                  className={isUser
+                    ? 'ml-auto max-w-[80%] rounded-2xl bg-accent-muted px-4 py-2 text-text-primary'
+                    : 'mr-auto max-w-[80%] rounded-2xl bg-elevated px-4 py-3 text-text-primary'}
                 >
                   {isUser ? (
-                    msg.content
+                    message.content
                   ) : (
                     <div className="leading-relaxed">
-                      {msg.content ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: MarkdownParagraph }}>
-                          {msg.content}
-                        </ReactMarkdown>
+                      {message.content ? (
+                        <CopilotMarkdown content={message.content} />
                       ) : isStreamingAssistant ? (
                         <span className="text-text-tertiary">Thinking...</span>
                       ) : null}
-                      {isStreamingAssistant && msg.content && (
-                        <span className="inline-block w-0.5 h-4 bg-accent ml-1 animate-[blink_1s_infinite]" />
+                      {isStreamingAssistant && message.content && (
+                        <span className="ml-1 inline-block h-4 w-0.5 animate-[blink_1s_infinite] bg-accent" />
                       )}
                     </div>
                   )}
@@ -456,13 +147,11 @@ function AITab({ ticker, company }) {
             );
           })}
 
-          {/* Inline error */}
           {error && (
-            <div className={
-              error.includes('limit')
-                ? 'bg-[#F59E0B]/10 text-[#F59E0B] rounded-lg p-4 text-center text-sm'
-                : 'bg-error/10 text-error rounded-lg p-3 text-sm'
-            }>
+            <div className={error.includes('limit')
+              ? 'rounded-lg bg-[#F59E0B]/10 p-4 text-center text-sm text-[#F59E0B]'
+              : 'rounded-lg bg-error/10 p-3 text-sm text-error'}
+            >
               <div className="space-y-3">
                 <div>{error}</div>
                 {shouldShowUpgradePrompt && (
@@ -478,32 +167,30 @@ function AITab({ ticker, company }) {
             </div>
           )}
 
-          {/* Scroll anchor */}
           <div ref={messageEndRef} />
         </div>
       )}
 
-      {/* ===== Input bar ===== */}
-      <div className="p-4 border-t border-border flex gap-2">
+      <div className="flex gap-2 border-t border-border p-4">
         <input
           type="text"
           placeholder="Ask a question..."
           value={input}
-          onChange={(e) => {
-            if (e.target.value.length <= 1000) {
-              setInput(e.target.value);
+          onChange={(event) => {
+            if (event.target.value.length <= 1000) {
+              setInput(event.target.value);
             }
           }}
           onKeyDown={handleKeyDown}
           disabled={isStreaming}
-          className={`flex-1 bg-elevated border border-border rounded-lg px-4 py-2 text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none${
+          className={`flex-1 rounded-lg border border-border bg-elevated px-4 py-2 text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none${
             isStreaming ? ' opacity-50' : ''
           }`}
         />
         <button
           onClick={() => handleSend(input)}
           disabled={!canSend}
-          className="bg-accent hover:bg-accent-hover text-text-inverse px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-lg bg-accent px-4 py-2 font-medium text-text-inverse transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Send
         </button>
