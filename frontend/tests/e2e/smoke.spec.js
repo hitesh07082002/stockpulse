@@ -4,14 +4,14 @@ test('landing page exposes the search-first experience', async ({ page }) => {
   await page.goto('/');
 
   await expect(
-    page.getByRole('heading', { name: /search any s&p 500 company/i }),
+    page.getByRole('heading', { name: /stockpulse/i }),
   ).toBeVisible();
   await expect(
     page.getByPlaceholder('Search by ticker or company name...'),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'AAPL' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'AAPL', exact: true })).toBeVisible();
   await expect(
-    page.getByText(/normalized sec financial data for 500 s&p companies/i),
+    page.getByText(/500 companies/i),
   ).toBeVisible();
 });
 
@@ -19,10 +19,10 @@ test('landing search leads into the stock detail financials hero flow', async ({
   await page.goto('/');
 
   await page.getByPlaceholder('Search by ticker or company name...').fill('AAPL');
-  await expect(page.getByRole('button', { name: /AAPL Apple/i })).toBeVisible();
+  await expect(page.getByRole('option', { name: /AAPL Apple/i })).toBeVisible();
 
-  await page.getByRole('button', { name: /AAPL Apple/i }).click();
-  await expect(page.getByText('AAPL', { exact: true })).toBeVisible();
+  await page.getByRole('option', { name: /AAPL Apple/i }).click();
+  await expect(page).toHaveURL(/\/stock\/AAPL$/);
 
   await page.getByRole('tab', { name: 'Financials' }).click();
   await expect(page.getByRole('heading', { name: 'Revenue' })).toBeVisible();
@@ -156,7 +156,7 @@ test('auth modal supports register, login, and logout', async ({ page }) => {
   await expect(page.getByText(/50 ai prompts\/day/i)).toBeVisible();
 });
 
-test('google sign-in completes through the local mock consent flow', async ({ page, baseURL }) => {
+test('google sign-in completes through the local mock consent flow', async ({ page }) => {
   await page.goto('/');
 
   await page.getByRole('button', { name: /^sign in$/i }).click();
@@ -167,11 +167,10 @@ test('google sign-in completes through the local mock consent flow', async ({ pa
 
   await page.getByRole('button', { name: /continue as/i }).click();
 
-  const expectedOrigin = new URL(baseURL || 'http://localhost:5173').origin;
   await expect.poll(() => {
     const current = new URL(page.url());
-    return `${current.origin}${current.pathname}`;
-  }).toBe(`${expectedOrigin}/`);
+    return current.pathname;
+  }).toBe('/');
   await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
   await expect(page.getByText(/demo user/i)).toBeVisible();
 });

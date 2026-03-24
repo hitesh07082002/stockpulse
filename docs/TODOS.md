@@ -23,7 +23,7 @@
 ### Metadata Override Curation
 **What:** Curate the small residual override set for `description`, `website`, and `exchange` after the first automated metadata backfill. Current known gap: `FISV`.
 **Why:** The enrichment command is landed, but the last few low-quality or missing Yahoo records should be fixed in the tracked override CSV so the product reaches effectively complete metadata coverage.
-**Plan:** See [`docs/company-metadata-ingestion-plan.md`](./docs/company-metadata-ingestion-plan.md).
+**Plan:** See [`docs/company-metadata-ingestion-plan.md`](./company-metadata-ingestion-plan.md).
 **Depends on:** `enrich_company_metadata` being in place and run at least once.
 **Status:** Not started
 
