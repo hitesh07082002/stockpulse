@@ -3,10 +3,10 @@
 ## Pre-Deploy
 
 ### First Production Rollout Verification
-**What:** Finish the first real production rollout from `main`, then verify health, landing/search, stock detail, auth, AI, and cron-backed data refresh behavior on the live domain.
-**Why:** M7 deployment infrastructure is implemented, but the live rollout and operator verification pass are still the last serious launch gate.
+**What:** Confirmed production rollout from `main`, plus live verification of health, landing/search, stock detail, auth, AI, and cron-backed data refresh behavior on the real domain.
+**Why:** This was the last serious launch gate. It is now complete and should remain documented as the baseline production verification pass.
 **Depends on:** Production server setup, GitHub Actions deploy secrets, and a green PR merge to `main`.
-**Status:** Not started
+**Status:** Done
 
 ### Protect `main` With Required Checks
 **What:** Turn on GitHub branch protection for `main` and require backend, frontend, and Playwright smoke checks before merge.

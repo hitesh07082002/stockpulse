@@ -239,3 +239,11 @@ def test_google_profile_auto_links_verified_email_without_duplicate_user():
     assert user.id == existing_user.id
     assert SocialAccount.objects.get(provider="google", uid="google-existing-user").user_id == existing_user.id
     assert get_user_model().objects.filter(email="existing@example.com").count() == 1
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False, ENABLE_GOOGLE_OAUTH_MOCK=False)
+def test_google_mock_consent_is_disabled_when_mock_auth_is_off(api_client):
+    response = api_client.get("/api/auth/google/mock-consent/")
+
+    assert response.status_code == 404

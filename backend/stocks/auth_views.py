@@ -68,7 +68,7 @@ def _session_payload(user=None, *, has_refresh_session=False):
                 else settings.AI_DAILY_LIMIT_ANONYMOUS
             ),
         },
-        "google_signin_available": google_oauth_is_configured() or settings.DEBUG,
+        "google_signin_available": google_oauth_is_configured() or settings.ENABLE_GOOGLE_OAUTH_MOCK,
         "has_refresh_session": has_refresh_session,
     }
 
@@ -191,7 +191,7 @@ def google_start_view(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def google_mock_consent_view(request):
-    if not settings.DEBUG:
+    if not settings.ENABLE_GOOGLE_OAUTH_MOCK:
         return HttpResponse(status=404)
 
     state = request.query_params.get("state", "")
@@ -254,7 +254,7 @@ def google_callback_view(request):
     redirect_next = state_payload["next"]
 
     try:
-        if request.query_params.get("mock") == "1" and settings.DEBUG:
+        if request.query_params.get("mock") == "1" and settings.ENABLE_GOOGLE_OAUTH_MOCK:
             profile = build_mock_google_profile(
                 request.query_params.get("email"),
                 request.query_params.get("name"),

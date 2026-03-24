@@ -5,6 +5,12 @@ from decimal import Decimal
 import dj_database_url
 from dotenv import load_dotenv
 
+from config.runtime_validation import (
+    DEFAULT_SECRET_KEY,
+    parse_bool_env,
+    validate_runtime_configuration,
+)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
@@ -12,9 +18,15 @@ load_dotenv(BASE_DIR / '.env')
 def split_csv_env(name, default):
     return [value.strip() for value in os.getenv(name, default).split(',') if value.strip()]
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
-ALLOWED_HOSTS = split_csv_env('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+STOCKPULSE_ENV = os.getenv('STOCKPULSE_ENV', 'development').strip().lower()
+IS_PRODUCTION = STOCKPULSE_ENV == 'production'
+
+SECRET_KEY = os.getenv('SECRET_KEY', DEFAULT_SECRET_KEY)
+DEBUG = parse_bool_env(os.getenv('DEBUG'), default=not IS_PRODUCTION)
+ALLOWED_HOSTS = split_csv_env(
+    'ALLOWED_HOSTS',
+    '' if IS_PRODUCTION else 'localhost,127.0.0.1',
+)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -68,7 +80,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database — SQLite for dev, PostgreSQL for production
-database_url = os.getenv('DATABASE_URL') or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+database_url = DATABASE_URL or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
 DATABASES = {
     'default': dj_database_url.parse(
         database_url,
@@ -105,7 +118,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS
 CORS_ALLOWED_ORIGINS = split_csv_env(
     'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://127.0.0.1:5173',
+    '' if IS_PRODUCTION else 'http://localhost:5173,http://127.0.0.1:5173',
 )
 CORS_ALLOW_CREDENTIALS = True
 
@@ -164,6 +177,10 @@ GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 GOOGLE_OAUTH_REDIRECT_URI = os.getenv('GOOGLE_OAUTH_REDIRECT_URI', '')
 GOOGLE_OAUTH_MOCK_EMAIL = os.getenv('GOOGLE_OAUTH_MOCK_EMAIL', 'demo.user@stockpulse.dev')
+ENABLE_GOOGLE_OAUTH_MOCK = parse_bool_env(
+    os.getenv('ENABLE_GOOGLE_OAUTH_MOCK'),
+    default=(DEBUG and not IS_PRODUCTION),
+)
 
 # AI providers
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
@@ -193,3 +210,14 @@ GEMINI_OUTPUT_COST_PER_MTOK_USD = Decimal(os.getenv('GEMINI_OUTPUT_COST_PER_MTOK
 # SEC EDGAR
 SEC_USER_AGENT = 'StockPulse hitesh07082002@gmail.com'
 SEC_RATE_LIMIT = 10  # requests per second
+
+validate_runtime_configuration(
+    environment=STOCKPULSE_ENV,
+    is_production=IS_PRODUCTION,
+    debug=DEBUG,
+    secret_key=SECRET_KEY,
+    database_url=database_url,
+    allowed_hosts=ALLOWED_HOSTS,
+    cors_allowed_origins=CORS_ALLOWED_ORIGINS,
+    enable_google_oauth_mock=ENABLE_GOOGLE_OAUTH_MOCK,
+)
