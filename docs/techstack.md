@@ -1,7 +1,7 @@
 # StockPulse Tech Stack
 
-**Status:** Target V1 stack  
-**Date:** Mar 22, 2026  
+**Status:** Current V1 stack
+**Date:** Mar 22, 2026
 **Source docs:** [`spec.md`](./spec.md), [`plan.md`](./plan.md), [`architecture.md`](./architecture.md), [`cicd.md`](./cicd.md)
 
 ## Stack Philosophy
@@ -21,7 +21,7 @@ The V1 stack is intentionally conservative:
 | Database | PostgreSQL 16 | Strong relational fit for normalized facts, snapshots, and cache state |
 | Auth | Django auth + `django-allauth` + `djangorestframework-simplejwt` | Google-first auth with backend redirect/callback flow, email/password fallback, and secure cookie transport |
 | Rate limiting | `django-ratelimit` with a database-backed cache | Lightweight burst backstop without introducing Redis in V1 |
-| AI client | `anthropic` | Streaming per-company copilot |
+| AI client | `anthropic` + Gemini adapter via `requests` | Anthropic is the production-default provider, with the same backend seam supporting Gemini |
 | Quote source | `yfinance` | Good enough for cached supporting price context in V1 |
 | Parsing / data tools | `pandas`, `numpy`, `beautifulsoup4`, `requests` | SEC and data-shaping support where needed |
 
@@ -62,7 +62,7 @@ The V1 stack is intentionally conservative:
 
 ## Job Execution Model
 
-V1 background work uses Django management commands on a scheduled worker.
+V1 background work uses Django management commands invoked by host cron against the app container.
 
 Scheduled jobs:
 - `ingest_companies`
@@ -86,19 +86,16 @@ Celery/Redis is deferred until one of these becomes true:
 | Backend unit/integration | pytest | models, services, normalization, API behavior |
 | Frontend unit/component | vitest | UI state, rendering, interaction logic |
 | End-to-end smoke | Playwright | landing, search, stock detail, auth, AI flow |
-| Linting | Ruff / ESLint | static quality gates |
+| Linting | Django system checks + ESLint | current repo quality gates |
 | Build verification | `make build` | production build sanity |
 
 ## Deployment Shape
 
-V1 deployment assumes:
-- web process
-- scheduled worker process
-- PostgreSQL 16
-
-Possible hosting options:
-- app platform style deployment
-- VM/container deployment with one scheduled worker
+V1 deployment currently uses:
+- one Dockerized web container serving Django + the built SPA
+- one PostgreSQL 16 container
+- host `nginx` for TLS termination and reverse proxy
+- host cron invoking Django management commands against `stockpulse-web`
 
 The plan does not require:
 - Redis

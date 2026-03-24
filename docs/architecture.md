@@ -1,7 +1,7 @@
 # StockPulse Architecture
 
-**Status:** Drafted from the final V1 plan  
-**Date:** Mar 22, 2026  
+**Status:** Current V1 architecture baseline
+**Date:** Mar 22, 2026
 **Source docs:** [`spec.md`](./spec.md), [`plan.md`](./plan.md), [`DESIGN.md`](./DESIGN.md), [`cicd.md`](./cicd.md)
 
 ## Goal

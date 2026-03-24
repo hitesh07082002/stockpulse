@@ -153,6 +153,7 @@ Includes:
 - curated results table
 - sortable columns
 - API-driven filtering and sorting over `MetricSnapshot`
+- mobile filter sheet and stacked result cards on smaller screens
 
 Does not include:
 - saved screens
@@ -173,6 +174,7 @@ Includes:
 - honesty about sparse or weak coverage
 - explicit quota, timeout, empty-response, and provider-unavailable states
 - quota refunds when the provider fails before returning any answer text
+- no empty assistant bubble after failed streams
 - anonymous quota exhaustion -> sign-in upgrade path
 
 Limits:

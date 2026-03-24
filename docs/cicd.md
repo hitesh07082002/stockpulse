@@ -19,16 +19,16 @@ That means:
 ## 2.0 Repository and Branch Strategy
 
 - `main` remains the long-term protected branch
-- the current pre-rewrite app should be preserved with a legacy branch or tag such as `legacy/pre-rewrite`
-- active rebuild work can happen on a dedicated rewrite branch until the new foundation is ready
+- feature work happens on short-lived branches and lands through pull requests
 - no direct pushes to protected `main`
 - all production-bound changes land through pull requests
+- branch protection is still a remaining hardening task, not a confirmed live repo setting
 
 ## 3.0 CI Strategy
 
 ## 3.1 Required PR Checks
 
-Every pull request to `main` should run these required checks in parallel where possible:
+Every pull request to `main` should run these checks in parallel where possible:
 
 1. backend lint and static checks
 2. backend tests
@@ -39,16 +39,15 @@ Every pull request to `main` should run these required checks in parallel where 
 7. frontend build
 8. end-to-end smoke
 
-`main` should not be mergeable unless all required checks pass.
+Today these are implemented in GitHub Actions as `Backend checks`, `Frontend checks`, and `Playwright smoke`. Branch protection should later mark them as required.
 
 ## 3.2 Backend CI
 
-Run on GitHub Actions because the repo is hosted on GitHub.
+Runs on GitHub Actions because the repo is hosted on GitHub.
 
 Recommended backend CI gates:
 - install Python from a pinned version
 - install backend dependencies from [`backend/requirements.txt`](./backend/requirements.txt)
-- run `ruff` once it is added in M1
 - run Django config/system checks
 - run pytest against PostgreSQL 16, not SQLite
 - publish backend coverage outputs for the `stocks` app
@@ -60,7 +59,7 @@ Recommended frontend CI gates:
 - use a pinned Node version
 - run `npm ci` in [`frontend`](./frontend)
 - run ESLint
-- run Vitest once added in M1
+- run Vitest
 - publish V8 coverage outputs for `frontend/src`
 - run Vite production build
 
@@ -77,6 +76,7 @@ Critical smoke path:
 - search works
 - stock detail opens
 - Financials tab renders
+- mobile screener and stock-detail responsive flows stay usable
 - Google auth entry point is present
 - anonymous AI quota flow works
 
@@ -87,23 +87,25 @@ When smoke fails, CI should upload:
 
 ## 3.5 CI Quality Features
 
-For excellent CI quality, use these defaults:
+The current CI already uses several strong defaults:
 - GitHub Actions concurrency cancellation on superseded PR pushes
 - dependency caching for Python and Node
 - separate fast jobs from slower smoke jobs
 - artifact upload for test reports and coverage outputs
+
+Still recommended as follow-up hardening:
 - branch protection requiring up-to-date checks before merge
 - a scheduled security workflow for dependency and code scanning
 
 ## 3.6 Security and Supply Chain
 
-Recommended recurring CI jobs:
+Recommended recurring CI jobs for the next hardening pass:
 - CodeQL for Python and JavaScript
 - dependency audit for Python and npm
 - secret scanning on push and PR
 - Dependabot or Renovate for dependency updates
 
-These do not all need to block early feature work, but they should exist before launch.
+These are not all wired today, so they remain hardening work rather than current guarantees.
 
 ## 4.0 CD Strategy
 
@@ -192,7 +194,7 @@ Recommended workflows:
   - frontend lint/test/build
   - Playwright smoke
 
-- `.github/workflows/security.yml`
+- optional follow-up security workflow
   - CodeQL
   - dependency audit
   - secret scanning hooks if needed
