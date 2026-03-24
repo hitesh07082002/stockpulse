@@ -90,6 +90,15 @@ If you change product behavior or scope, update the matching docs in the same tu
 - update [`techstack.md`](./docs/techstack.md) for dependency, auth, storage, or infrastructure changes
 - update [`cicd.md`](./docs/cicd.md) for CI, deploy, environment, release, or rollback changes
 
+## Local Development
+- Start the local stack with `make dev`.
+- Frontend runs at `http://localhost:5173`; backend runs at `http://localhost:8000`.
+- The frontend uses relative `/api` calls by default and Vite proxies them to Django on `localhost:8000`.
+- Auth bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie for state-changing auth requests.
+- In local `DEBUG`, Google sign-in uses the real backend-managed redirect/callback flow when OAuth credentials are configured; otherwise `/api/auth/google/start/` falls back to the debug-only mock consent page.
+- Gemini is the default local copilot provider when `GEMINI_API_KEY` is present; override with `AI_PROVIDER` or `ANTHROPIC_MODEL`/`GEMINI_MODEL` as needed.
+- Set `VITE_API_BASE_URL` only when you need the frontend to target a non-default backend origin.
+
 ## Verification Expectations
 Before considering major work done, aim to pass the repo gates defined in [`plan.md`](./docs/plan.md):
 
