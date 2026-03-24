@@ -4,14 +4,14 @@ test('landing page exposes the search-first experience', async ({ page }) => {
   await page.goto('/');
 
   await expect(
-    page.getByRole('heading', { name: /search any s&p 500 company/i }),
+    page.getByRole('heading', { name: /stockpulse/i }),
   ).toBeVisible();
   await expect(
     page.getByPlaceholder('Search by ticker or company name...'),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'AAPL' })).toBeVisible();
   await expect(
-    page.getByText(/normalized sec financial data for 500 s&p companies/i),
+    page.getByText(/500 companies/i),
   ).toBeVisible();
 });
 
@@ -19,9 +19,9 @@ test('landing search leads into the stock detail financials hero flow', async ({
   await page.goto('/');
 
   await page.getByPlaceholder('Search by ticker or company name...').fill('AAPL');
-  await expect(page.getByRole('button', { name: /AAPL Apple/i })).toBeVisible();
+  await expect(page.getByRole('option', { name: /AAPL Apple/i })).toBeVisible();
 
-  await page.getByRole('button', { name: /AAPL Apple/i }).click();
+  await page.getByRole('option', { name: /AAPL Apple/i }).click();
   await expect(page.getByText('AAPL', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Financials' }).click();
