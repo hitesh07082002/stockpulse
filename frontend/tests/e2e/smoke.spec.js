@@ -117,6 +117,45 @@ test('screener filters into a company detail flow', async ({ page }) => {
   await expect(page.getByText(ticker, { exact: true })).toBeVisible();
 });
 
+test.describe('mobile responsive flows', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('mobile screener uses the filter sheet and card results without overflow', async ({ page }) => {
+    await page.goto('/screener');
+
+    await page.getByRole('button', { name: /^filters$/i }).click();
+    const filterDialog = page.getByRole('dialog', { name: /refine results/i });
+    await expect(filterDialog).toBeVisible();
+
+    await filterDialog.getByRole('combobox').selectOption('Information Technology');
+    await filterDialog.getByRole('button', { name: /apply filters/i }).click();
+    await expect(filterDialog).toHaveCount(0);
+
+    await expect(page.locator('table')).toHaveCount(0);
+    await expect(page.getByText(/tap a company card to jump into the full detail view/i)).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+
+  test('mobile stock detail keeps tabs and copilot input usable without overflow', async ({ page }) => {
+    await page.goto('/stock/AAPL');
+
+    await expect(page.getByRole('tab', { name: 'Financials' })).toBeVisible();
+    await page.getByRole('tab', { name: 'AI' }).click();
+    await expect(page.getByPlaceholder('Ask a question...')).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+});
+
 test('invalid ticker renders the search-facing not-found state', async ({ page }) => {
   await page.goto('/stock/INVALIDTICKER');
 
