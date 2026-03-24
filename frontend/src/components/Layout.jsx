@@ -47,7 +47,7 @@ function Layout({ children }) {
             StockPulse
           </Link>
 
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-2 sm:gap-4 md:gap-6">
             {!isBootstrapping && authNotice && (
               <button
                 type="button"
@@ -65,19 +65,19 @@ function Layout({ children }) {
             )}
             <Link
               to="/screener"
-              className="font-body text-sm font-medium text-text-secondary no-underline hover:text-text-primary transition-colors"
+              className="hidden font-body text-sm font-medium text-text-secondary no-underline transition-colors hover:text-text-primary md:inline"
             >
               Screener
             </Link>
             <Link
               to="/about"
-              className="font-body text-sm font-medium text-text-secondary no-underline hover:text-text-primary transition-colors"
+              className="hidden font-body text-sm font-medium text-text-secondary no-underline transition-colors hover:text-text-primary md:inline"
             >
               About
             </Link>
             <button
               onClick={() => navigate('/screener')}
-              className="flex items-center justify-center bg-transparent border-none text-text-secondary cursor-pointer p-1 rounded-md hover:text-text-primary transition-colors"
+              className="flex items-center justify-center rounded-md border-none bg-transparent p-1 text-text-secondary transition-colors hover:text-text-primary"
               aria-label="Search stocks"
             >
               <svg
@@ -96,7 +96,7 @@ function Layout({ children }) {
             </button>
             <button
               onClick={toggleTheme}
-              className="flex items-center justify-center bg-transparent border border-border text-text-secondary cursor-pointer p-2 rounded-md hover:text-text-primary hover:border-border-hover transition-colors"
+              className="flex items-center justify-center rounded-md border border-border p-2 text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary"
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? (
@@ -164,7 +164,7 @@ function Layout({ children }) {
               <button
                 type="button"
                 onClick={() => openAuthModal('login')}
-                className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-hover"
+                className="rounded-full bg-accent px-3 py-2 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-hover sm:px-4"
               >
                 Sign in
               </button>
