@@ -131,6 +131,6 @@ describe('App routes', () => {
     expect(
       await screen.findByRole('heading', { name: /about stockpulse/i }),
     ).toBeInTheDocument();
-    expect(await screen.findByText(/data sources/i)).toBeInTheDocument();
+    expect(await screen.findByText(/how the data works/i)).toBeInTheDocument();
   });
 });
