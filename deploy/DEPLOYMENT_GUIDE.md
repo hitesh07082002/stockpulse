@@ -164,12 +164,14 @@ nano /opt/stockpulse/.env
 
 Paste this (fill in real values):
 ```
+STOCKPULSE_ENV=production
 SECRET_KEY=GENERATE_ONE_BELOW
 DEBUG=False
 DATABASE_URL=postgres://stockpulse:YOUR_DB_PASSWORD@db:5432/stockpulse
 POSTGRES_PASSWORD=YOUR_DB_PASSWORD
 ALLOWED_HOSTS=stockpulse.hiteshsadhwani.xyz
 CORS_ALLOWED_ORIGINS=https://stockpulse.hiteshsadhwani.xyz
+ENABLE_GOOGLE_OAUTH_MOCK=False
 AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 GOOGLE_OAUTH_CLIENT_ID=your-google-client-id
@@ -183,6 +185,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
 
 Choose a strong POSTGRES_PASSWORD and use it in both `POSTGRES_PASSWORD` and `DATABASE_URL`.
+Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` are missing, or mock Google OAuth is left enabled.
 
 Save and exit (Ctrl+X, Y, Enter in nano).
 

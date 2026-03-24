@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .copilot import CopilotRequestError, build_copilot_response
+from .health import evaluate_health
 from .models import Company, FinancialFact, MetricSnapshot
 from .pricing import PriceCacheUnavailable, get_or_refresh_price_cache
 from .serializers import (
@@ -164,9 +165,14 @@ def health_view(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
     except Exception:
-        return Response({"status": "error", "db": "unreachable"}, status=503)
+        payload, status_code = evaluate_health(db_ok=False, db_vendor=None)
+        return Response(payload, status=status_code)
 
-    return Response({"status": "ok", "db": "ok"})
+    payload, status_code = evaluate_health(
+        db_ok=True,
+        db_vendor=connection.vendor,
+    )
+    return Response(payload, status=status_code)
 
 
 # --- Company endpoints ---
