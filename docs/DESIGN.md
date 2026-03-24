@@ -176,9 +176,12 @@
 
 ```text
 /  (Landing)
-├── [1st] Search bar — dominant, above fold, owns the page
-├── [2nd] Quick pick tickers — immediate entry points into coverage
-└── [3rd] Trust statement — one line about coverage and methodology
+├── [1st] Brand heading: "StockPulse" + product subline
+├── [2nd] Search bar — dominant, above fold, owns the page
+├── [3rd] Quick ticker pills — elevated interactive buttons
+├── [4th] Data proof strip — factual coverage stats
+├── [5th] Live data strip — top companies with real prices
+└── [6th] Navigation links — screener + about
 
 /stock/:ticker  (Stock Detail)
 ├── [PERSISTENT] Company header: ticker > name > quote > change > sector
@@ -219,18 +222,25 @@
 └── [3rd] Result count or empty state
 
 /about
-├── [1st] Methodology summary
-├── [2nd] Data source provenance (SEC, yfinance)
-└── [3rd] Architecture diagram
+├── [1st] How the data works (SEC filings, normalization, freshness)
+├── [2nd] What you can do (features as simple list)
+├── [3rd] AI analysis (grounding, limits, transparency)
+├── [4th] Limitations and disclaimers
+└── [5th] Built by footer
 ```
 
 ## Page Templates
 
 ### Landing Page
-- Search sits above the fold and owns the page.
-- Supporting content is lightweight: quick tickers and a one-line trust statement.
-- The trust statement should be specific and factual, not marketing copy. Example tone: "Normalized SEC financial data for 500 S&P companies" or "Research 500 companies with real SEC filings and AI analysis." Avoid generic claims like "the best stock research tool."
-- No live market movers grid in V1.
+- Brand heading ("StockPulse") sits above the search bar in Display XL (56px Satoshi).
+- One-line product subline beneath: "Financials, valuations, and AI analysis for every S&P 500 company" in DM Sans text-lg, text-text-secondary.
+- Search sits below and owns the page. Do not add content above the brand heading.
+- Quick ticker pills are elevated interactive buttons (bg-elevated, border, rounded-full, hover:border-accent), not text links.
+- Data proof strip: "500 companies · 30yr SEC filings · Updated daily" in JetBrains Mono text-sm text-text-tertiary.
+- Live data strip: horizontal row of top-5 companies by market cap, each showing ticker, price, and day change in monospace. Fetched from /api/screener/. If API unavailable, strip does not render.
+- Navigation links to screener and about page at bottom.
+- No marketing hero, no 3-column feature grid, no gradient backgrounds.
+- No live market movers grid in V1 (the data strip is a simpler, factual alternative).
 
 ### Stock Detail
 - Persistent company header at top.
@@ -245,8 +255,13 @@
 - No saved screens, custom columns, or advanced boolean filter builders in V1.
 
 ### About
-- Quiet documentation page.
-- Use diagrams, methodology notes, and source provenance instead of brand copy.
+- Methodology and data provenance page, not a developer portfolio.
+- Lead with how data works (SEC filings, normalization, update frequency).
+- List what users can do (financials, screener, DCF, AI copilot, price charts).
+- Separate section for AI analysis: grounding approach, query limits, transparency.
+- Limitations and disclaimers section (not investment advice, data delays).
+- No architecture diagrams, no tech stack cards, no ASCII art.
+- "Built by" footer with GitHub link.
 
 ## Component Contract
 
