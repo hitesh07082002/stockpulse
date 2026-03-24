@@ -5,13 +5,13 @@ AI-powered stock analysis platform — React + Django + PostgreSQL.
 ## Read Order
 Before planning or coding, read these in order:
 
-1. [`spec.md`](./docs/spec.md)
-2. [`plan.md`](./docs/plan.md)
-3. [`DESIGN.md`](./docs/DESIGN.md)
-4. [`architecture.md`](./docs/architecture.md)
-5. [`feature.md`](./docs/feature.md)
-6. [`techstack.md`](./docs/techstack.md)
-7. [`cicd.md`](./docs/cicd.md)
+1. [`docs/spec.md`](./docs/spec.md)
+2. [`docs/plan.md`](./docs/plan.md)
+3. [`docs/DESIGN.md`](./docs/DESIGN.md)
+4. [`docs/architecture.md`](./docs/architecture.md)
+5. [`docs/feature.md`](./docs/feature.md)
+6. [`docs/techstack.md`](./docs/techstack.md)
+7. [`docs/cicd.md`](./docs/cicd.md)
 
 ## Product Thesis
 StockPulse V1 is a serious financial research tool for S&P 500 companies.
@@ -46,16 +46,16 @@ Do not reopen these unless the user explicitly changes product direction:
 - Prefer boring, deterministic paths over extra infrastructure.
 
 ## Design System
-Always read [`DESIGN.md`](./docs/DESIGN.md) before making any visual or UI decisions.
+Always read [`docs/DESIGN.md`](./docs/DESIGN.md) before making any visual or UI decisions.
 
 All font choices, colors, spacing, chart tokens, and aesthetic direction are defined there.
 
 Do not deviate without explicit user approval.
 
-In QA or review mode, flag any code that does not match [`DESIGN.md`](./docs/DESIGN.md).
+In QA or review mode, flag any code that does not match [`docs/DESIGN.md`](./docs/DESIGN.md).
 
 ## Delivery Order
-Build in milestone order from [`plan.md`](./docs/plan.md):
+Build in milestone order from [`docs/plan.md`](./docs/plan.md):
 
 1. Foundation
 2. Ingestion and canonical data
@@ -82,13 +82,13 @@ While working on M2:
 ## Documentation Discipline
 If you change product behavior or scope, update the matching docs in the same turn:
 
-- update [`spec.md`](./docs/spec.md) for top-level contract changes
-- update [`plan.md`](./docs/plan.md) for milestone, acceptance, or execution changes
-- update [`DESIGN.md`](./docs/DESIGN.md) for visual or interaction changes
-- update [`architecture.md`](./docs/architecture.md) for system shape, data flow, or job model changes
-- update [`feature.md`](./docs/feature.md) for route or feature-boundary changes
-- update [`techstack.md`](./docs/techstack.md) for dependency, auth, storage, or infrastructure changes
-- update [`cicd.md`](./docs/cicd.md) for CI, deploy, environment, release, or rollback changes
+- update [`docs/spec.md`](./docs/spec.md) for top-level contract changes
+- update [`docs/plan.md`](./docs/plan.md) for milestone, acceptance, or execution changes
+- update [`docs/DESIGN.md`](./docs/DESIGN.md) for visual or interaction changes
+- update [`docs/architecture.md`](./docs/architecture.md) for system shape, data flow, or job model changes
+- update [`docs/feature.md`](./docs/feature.md) for route or feature-boundary changes
+- update [`docs/techstack.md`](./docs/techstack.md) for dependency, auth, storage, or infrastructure changes
+- update [`docs/cicd.md`](./docs/cicd.md) for CI, deploy, environment, release, or rollback changes
 
 ## Local Development
 - Start the local stack with `make dev`.
@@ -100,7 +100,7 @@ If you change product behavior or scope, update the matching docs in the same tu
 - Set `VITE_API_BASE_URL` only when you need the frontend to target a non-default backend origin.
 
 ## Verification Expectations
-Before considering major work done, aim to pass the repo gates defined in [`plan.md`](./docs/plan.md):
+Before considering major work done, aim to pass the repo gates defined in [`docs/plan.md`](./docs/plan.md):
 
 - `make lint`
 - `make test`
