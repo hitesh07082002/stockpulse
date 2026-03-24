@@ -195,6 +195,8 @@ Provider contract:
 - Gemini copilot requests default to a zero thinking budget on this grounded V1 path so hidden reasoning does not consume the visible answer budget
 - the frontend only sees canonical SSE JSON frames: `meta`, `text`, `error`, `done`
 - provider-native event formats stay behind the adapter boundary
+- zero-output provider failures refund the reserved daily quota instead of charging the user for an empty answer
+- SSE `error` frames preserve normalized provider metadata such as code, provider name, retryability, and upstream status where available
 
 Conversation scope:
 - bounded follow-up context comes from the active browser session
@@ -208,6 +210,7 @@ What it does not use:
 
 Grounding and cost rules:
 - StockPulse structured data is the primary company-specific grounding source
+- annual and quarterly StockPulse series are always treated as reported historical periods, never as implicit forecasts
 - the model may use general financial knowledge to explain why metrics changed or what a ratio generally implies
 - answers should distinguish StockPulse data from general context when both are used
 - cost safety is operational, not database-enforced: load limited credits on the provider API key and rely on in-app quota plus burst limits

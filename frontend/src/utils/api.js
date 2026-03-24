@@ -118,6 +118,15 @@ function extractRemainingQuota(payload) {
   return null;
 }
 
+function parseNumericField(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function normalizeCopilotStreamEvent(payload) {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -144,6 +153,10 @@ export function normalizeCopilotStreamEvent(payload) {
       type: 'error',
       message: String(payload.message ?? payload.content ?? payload.error ?? 'Stream error'),
       code: payload.code ?? payload.error_code ?? null,
+      status: parseNumericField(payload.status),
+      provider: payload.provider ?? null,
+      retryable: payload.retryable === undefined ? null : Boolean(payload.retryable),
+      partial: Boolean(payload.partial),
       remainingQuota: extractRemainingQuota(payload),
     };
   }
@@ -396,6 +409,11 @@ export async function* sendChatMessage(ticker, message, history = []) {
   }
 
   if (!sawTerminalEvent) {
-    throw new Error('Stream ended unexpectedly.');
+    const error = new Error('The response stream ended unexpectedly. Please try again.');
+    error.payload = {
+      code: 'stream_ended_unexpectedly',
+      retryable: true,
+    };
+    throw error;
   }
 }
