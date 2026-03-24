@@ -173,20 +173,23 @@ function AITab({ ticker, company }) {
     });
   }
 
-  function finalizeAssistantMessage() {
-    updateLastAssistantMessage((message) => ({
-      ...message,
-      status: 'complete',
-    }));
-  }
-
-  function removeEmptyAssistantPlaceholder() {
+  function settleAssistantMessage() {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (last && last.role === 'assistant' && !last.content) {
+      if (!last || last.role !== 'assistant') {
+        return prev;
+      }
+
+      if (!last.content) {
         return prev.slice(0, -1);
       }
-      return prev;
+
+      const updated = [...prev];
+      updated[updated.length - 1] = {
+        ...last,
+        status: 'complete',
+      };
+      return updated;
     });
   }
 
@@ -279,7 +282,7 @@ function AITab({ ticker, company }) {
           if (streamRemaining !== null) {
             setRemainingQuota(streamRemaining);
           }
-          finalizeAssistantMessage();
+          settleAssistantMessage();
           return;
         }
 
@@ -291,7 +294,7 @@ function AITab({ ticker, company }) {
           if (streamRemaining !== null) {
             setRemainingQuota(streamRemaining);
           }
-          finalizeAssistantMessage();
+          settleAssistantMessage();
           return;
         }
       }
@@ -306,7 +309,7 @@ function AITab({ ticker, company }) {
       setError(fallbackMessage);
       setErrorCode(payload?.code || (err?.status === 429 ? 'quota_exhausted' : ''));
       setErrorStatus(err?.status || null);
-      removeEmptyAssistantPlaceholder();
+      settleAssistantMessage();
     } finally {
       setIsStreaming(false);
     }
@@ -414,6 +417,10 @@ function AITab({ ticker, company }) {
             const isStreamingAssistant =
               isAssistant && idx === messages.length - 1 && isStreaming;
 
+            if (isAssistant && !msg.content && !isStreamingAssistant) {
+              return null;
+            }
+
             return (
               <div
                 key={idx}
@@ -438,9 +445,7 @@ function AITab({ ticker, company }) {
                         </ReactMarkdown>
                       ) : isStreamingAssistant ? (
                         <span className="text-text-tertiary">Thinking...</span>
-                      ) : (
-                        <span className="text-text-tertiary">No response returned.</span>
-                      )}
+                      ) : null}
                       {isStreamingAssistant && msg.content && (
                         <span className="inline-block w-0.5 h-4 bg-accent ml-1 animate-[blink_1s_infinite]" />
                       )}

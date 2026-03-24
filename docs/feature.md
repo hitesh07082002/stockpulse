@@ -169,8 +169,10 @@ Includes:
 - bounded follow-up questions from the active browser session
 - SSE streaming responses
 - answers grounded primarily in structured StockPulse data, with general financial knowledge allowed for context and explanation
+- historical annual and quarterly StockPulse series explicitly treated as reported results, not projections
 - honesty about sparse or weak coverage
-- explicit quota, timeout, and provider-unavailable states
+- explicit quota, timeout, empty-response, and provider-unavailable states
+- quota refunds when the provider fails before returning any answer text
 - anonymous quota exhaustion -> sign-in upgrade path
 
 Limits:

@@ -1,7 +1,9 @@
 import hashlib
 import json
+import logging
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -27,6 +29,7 @@ from .serializers import ChatMessageSerializer
 
 NEW_YORK = ZoneInfo("America/New_York")
 ANON_COOKIE_SALT = "stocks.ai.anon"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +40,8 @@ class IdentityReservation:
     used: int
     remaining: int
     cookie_value: str | None = None
+    day: date | None = None
+    reserved: bool = False
 
 
 class CopilotRequestError(Exception):
@@ -73,12 +78,8 @@ def build_copilot_response(request, ticker):
         identity = reserve_daily_quota(identity)
     except ProviderUnavailableError as exc:
         response = Response(
-            {
-                "code": "provider_unavailable",
-                "error": str(exc),
-                "message": str(exc),
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            _provider_error_payload(exc, identity=identity, partial=False),
+            status=exc.status_code or status.HTTP_503_SERVICE_UNAVAILABLE,
         )
         maybe_set_anon_cookie(response, identity.cookie_value)
         return response
@@ -135,9 +136,10 @@ def resolve_identity_reservation(request):
 
 @transaction.atomic
 def reserve_daily_quota(identity):
+    usage_day = current_ai_day()
     counter, _created = AIUsageCounter.objects.select_for_update().get_or_create(
         usage_key_hash=identity.usage_key_hash,
-        day=current_ai_day(),
+        day=usage_day,
         defaults={
             "user_id": identity.user_id,
             "request_count": 0,
@@ -166,6 +168,8 @@ def reserve_daily_quota(identity):
     counter.request_count += 1
     counter.user_id = identity.user_id
     counter.save(update_fields=["request_count", "user", "updated_at"])
+    identity.day = usage_day
+    identity.reserved = True
     identity.used = counter.request_count
     identity.remaining = max(identity.limit - counter.request_count, 0)
     return identity
@@ -180,6 +184,26 @@ def _stream_copilot_events(*, provider, conversation, company, identity, meta_pa
                 streamed_text = True
                 yield _sse_event("text", {"content": event.text})
 
+        if not streamed_text:
+            identity, refunded = refund_daily_quota(identity)
+            empty_response_error = ProviderResponseError(
+                "The AI provider returned no text.",
+                code="provider_empty_response",
+                provider=provider.name,
+                retryable=True,
+            )
+            logger.warning(
+                "AI provider returned empty response provider=%s refunded=%s ticker=%s",
+                provider.name,
+                refunded,
+                company.ticker,
+            )
+            yield _sse_event(
+                "error",
+                _provider_error_payload(empty_response_error, identity=identity, partial=False),
+            )
+            return
+
         yield _sse_event(
             "done",
             {
@@ -188,27 +212,45 @@ def _stream_copilot_events(*, provider, conversation, company, identity, meta_pa
                 "ticker": company.ticker,
             },
         )
-    except ProviderTimeoutError:
-        yield _sse_event(
-            "error",
-            {
-                "code": "provider_timeout",
-                "message": "The AI copilot timed out. Please try again.",
-                "partial": streamed_text,
-                "remaining_quota": identity.remaining,
-            },
+    except ProviderTimeoutError as exc:
+        identity, refunded = refund_daily_quota(identity, allow_refund=not streamed_text)
+        logger.warning(
+            "AI provider timeout provider=%s status=%s partial=%s refunded=%s ticker=%s",
+            exc.provider or provider.name,
+            exc.status_code,
+            streamed_text,
+            refunded,
+            company.ticker,
         )
-    except (ProviderResponseError, ProviderUnavailableError):
         yield _sse_event(
             "error",
-            {
-                "code": "provider_unavailable",
-                "message": "The AI copilot is temporarily unavailable. Please try again shortly.",
-                "partial": streamed_text,
-                "remaining_quota": identity.remaining,
-            },
+            _provider_error_payload(exc, identity=identity, partial=streamed_text),
+        )
+    except (ProviderResponseError, ProviderUnavailableError) as exc:
+        identity, refunded = refund_daily_quota(identity, allow_refund=not streamed_text)
+        logger.warning(
+            "AI provider failure provider=%s code=%s status=%s partial=%s refunded=%s ticker=%s detail=%s",
+            exc.provider or provider.name,
+            getattr(exc, "code", "provider_unavailable"),
+            getattr(exc, "status_code", None),
+            streamed_text,
+            refunded,
+            company.ticker,
+            str(exc),
+        )
+        yield _sse_event(
+            "error",
+            _provider_error_payload(exc, identity=identity, partial=streamed_text),
         )
     except Exception:
+        identity, refunded = refund_daily_quota(identity, allow_refund=not streamed_text)
+        logger.exception(
+            "AI copilot internal error provider=%s partial=%s refunded=%s ticker=%s",
+            provider.name,
+            streamed_text,
+            refunded,
+            company.ticker,
+        )
         yield _sse_event(
             "error",
             {
@@ -216,6 +258,7 @@ def _stream_copilot_events(*, provider, conversation, company, identity, meta_pa
                 "message": "Something went wrong while generating the answer. Please try again.",
                 "partial": streamed_text,
                 "remaining_quota": identity.remaining,
+                "retryable": True,
             },
         )
     except GeneratorExit:
@@ -238,6 +281,28 @@ def maybe_set_anon_cookie(response, cookie_value):
 
 def current_ai_day():
     return timezone.now().astimezone(NEW_YORK).date()
+
+
+@transaction.atomic
+def refund_daily_quota(identity, *, allow_refund=True):
+    if not allow_refund or not identity.reserved or identity.day is None:
+        return identity, False
+
+    counter = (
+        AIUsageCounter.objects.select_for_update()
+        .filter(usage_key_hash=identity.usage_key_hash, day=identity.day)
+        .first()
+    )
+    if counter is None or counter.request_count == 0:
+        identity.reserved = False
+        return identity, False
+
+    counter.request_count -= 1
+    counter.save(update_fields=["request_count", "updated_at"])
+    identity.reserved = False
+    identity.used = counter.request_count
+    identity.remaining = max(identity.limit - counter.request_count, 0)
+    return identity, True
 
 
 def _validated_payload(request):
@@ -320,3 +385,32 @@ def _sse_event(event_type, payload):
     data = {"type": event_type}
     data.update(payload)
     return f"data: {json.dumps(data)}\n\n"
+
+
+def _provider_error_payload(exc, *, identity, partial):
+    payload = {
+        "code": getattr(exc, "code", "provider_unavailable"),
+        "message": _public_provider_message(exc),
+        "error": _public_provider_message(exc),
+        "partial": partial,
+        "remaining_quota": identity.remaining,
+        "provider": getattr(exc, "provider", None),
+        "retryable": getattr(exc, "retryable", True),
+    }
+    status_code = getattr(exc, "status_code", None)
+    if status_code is not None:
+        payload["status"] = status_code
+    return payload
+
+
+def _public_provider_message(exc):
+    code = getattr(exc, "code", "provider_unavailable")
+    if code == "provider_timeout":
+        return "The AI copilot timed out. Please try again."
+    if code == "provider_empty_response":
+        return "The AI copilot returned an empty answer. Please try again."
+    if code == "provider_rate_limited":
+        return "The AI copilot is busy right now. Please try again shortly."
+    if code == "provider_request_failed":
+        return "The AI copilot could not complete that request right now. Please try again."
+    return "The AI copilot is temporarily unavailable. Please try again shortly."

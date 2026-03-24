@@ -97,7 +97,7 @@ describe('copilot API helpers', () => {
 
   it('yields a normalized error event from the stream', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => createStreamResponse([
-      'data: {"type":"error","code":"quota_exhausted","message":"Daily limit reached","remaining_quota":0}\n\n',
+      'data: {"type":"error","code":"quota_exhausted","message":"Daily limit reached","remaining_quota":0,"status":429,"provider":"gemini","retryable":true,"partial":false}\n\n',
     ])));
 
     const events = [];
@@ -111,7 +111,30 @@ describe('copilot API helpers', () => {
         code: 'quota_exhausted',
         message: 'Daily limit reached',
         remainingQuota: 0,
+        status: 429,
+        provider: 'gemini',
+        retryable: true,
+        partial: false,
       }),
     ]);
+  });
+
+  it('throws a retryable error when the stream ends without a terminal event', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => createStreamResponse([
+      'data: {"type":"meta","ticker":"AAPL"}\n\n',
+      'data: {"type":"text","content":"Partial"}\n\n',
+    ])));
+
+    await expect(async () => {
+      for await (const _event of sendChatMessage('AAPL', 'Why is revenue up?')) {
+        // consume stream
+      }
+    }).rejects.toMatchObject({
+      message: 'The response stream ended unexpectedly. Please try again.',
+      payload: {
+        code: 'stream_ended_unexpectedly',
+        retryable: true,
+      },
+    });
   });
 });

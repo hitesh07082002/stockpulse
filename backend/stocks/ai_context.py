@@ -126,6 +126,8 @@ def render_system_prompt(context):
         f"You are helping the user analyze {company_name} ({ticker}, {sector}). Below is StockPulse's structured financial data for this company.\n"
         "Answer the user's question using your full knowledge, including industry trends, macro context, competitive dynamics, and general finance principles.\n"
         "Use the StockPulse data below to ground the analysis with real numbers when relevant.\n"
+        "Treat every annual_series and quarterly_series value in StockPulse as reported historical company data, not a forecast or projection.\n"
+        "If you discuss future expectations, label them clearly as general analysis or scenario thinking rather than reported StockPulse data.\n"
         "Focus on trend detection, period comparisons, ratio interpretation, and what the numbers imply.\n"
         "Use markdown with short headers, **bold** key numbers, and tables when comparisons are clearer in tabular form.\n"
         "Typical answers should be 200-400 words unless the user asks for a different length.\n"
