@@ -13,13 +13,13 @@ The rewrite branch is the source of truth. The next major step is the first live
 If you are a new engineer or a fresh agent session, read these in order:
 
 1. [`AGENTS.md`](./AGENTS.md)
-2. [`spec.md`](./spec.md)
-3. [`plan.md`](./plan.md)
-4. [`DESIGN.md`](./DESIGN.md)
-5. [`architecture.md`](./architecture.md)
-6. [`feature.md`](./feature.md)
-7. [`techstack.md`](./techstack.md)
-8. [`cicd.md`](./cicd.md)
+2. [`spec.md`](./docs/spec.md)
+3. [`plan.md`](./docs/plan.md)
+4. [`DESIGN.md`](./docs/DESIGN.md)
+5. [`architecture.md`](./docs/architecture.md)
+6. [`feature.md`](./docs/feature.md)
+7. [`techstack.md`](./docs/techstack.md)
+8. [`cicd.md`](./docs/cicd.md)
 
 ## What StockPulse V1 Is
 
@@ -50,17 +50,17 @@ V1 is **not**:
 
 ## Canonical Docs
 
-- [`spec.md`](./spec.md): top-level product and launch contract
-- [`plan.md`](./plan.md): milestones, build order, verification gates, acceptance criteria
-- [`DESIGN.md`](./DESIGN.md): visual and interaction source of truth
-- [`architecture.md`](./architecture.md): system shape and data flow
-- [`feature.md`](./feature.md): routes and feature boundaries
-- [`techstack.md`](./techstack.md): technology choices
-- [`cicd.md`](./cicd.md): CI/CD, release, and deployment strategy
+- [`spec.md`](./docs/spec.md): top-level product and launch contract
+- [`plan.md`](./docs/plan.md): milestones, build order, verification gates, acceptance criteria
+- [`DESIGN.md`](./docs/DESIGN.md): visual and interaction source of truth
+- [`architecture.md`](./docs/architecture.md): system shape and data flow
+- [`feature.md`](./docs/feature.md): routes and feature boundaries
+- [`techstack.md`](./docs/techstack.md): technology choices
+- [`cicd.md`](./docs/cicd.md): CI/CD, release, and deployment strategy
 
 ## Implementation Order
 
-Implementation should follow the milestone sequence in [`plan.md`](./plan.md):
+Implementation should follow the milestone sequence in [`plan.md`](./docs/plan.md):
 
 1. M1 Foundation
 2. M2 Ingestion and Canonical Data
@@ -174,7 +174,7 @@ The intended delivery model is:
 - health verification in the deploy pipeline
 - documented manual rollback path
 
-Details live in [`cicd.md`](./cicd.md).
+Details live in [`cicd.md`](./docs/cicd.md).
 
 ## Deployment Architecture
 
@@ -198,6 +198,6 @@ The operator runbook lives in [`deploy/DEPLOYMENT_GUIDE.md`](./deploy/DEPLOYMENT
 
 Before changing behavior:
 - update the matching docs in the same turn
-- preserve the rewrite strategy in [`plan.md`](./plan.md)
+- preserve the rewrite strategy in [`plan.md`](./docs/plan.md)
 - treat SEC normalization correctness as the top engineering priority
 - keep AI grounded primarily in structured StockPulse data, using general financial knowledge only as explanatory context

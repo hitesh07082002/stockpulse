@@ -74,7 +74,7 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 6.5 DONE Normalization fixtures prove deterministic handling of amendments, duplicates, mixed units, and derived quarters.
 - 6.6 DONE M2 local/dev data was reset after the schema cut and rebuilt from the canonical pipeline without compatibility glue.
 - 6.7 PENDING Scheduled-worker SLAs must hold under normal V1 load.
-- 6.8 DONE A documented S&P 500 coverage audit exists at [`docs/audits/sp500-launch-coverage-2026-03-22.md`](./docs/audits/sp500-launch-coverage-2026-03-22.md), passes the `95%` gate, and treats `gross_profit` and `gross_margin` as conditional metrics based on retained SEC payload applicability.
+- 6.8 DONE A documented S&P 500 coverage audit exists at [`docs/audits/sp500-launch-coverage-2026-03-22.md`](./audits/sp500-launch-coverage-2026-03-22.md), passes the `95%` gate, and treats `gross_profit` and `gross_margin` as conditional metrics based on retained SEC payload applicability.
 
 ## 7.0 Source of Truth
 
