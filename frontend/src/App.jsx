@@ -10,7 +10,7 @@ const AboutPage = lazy(() => import('./pages/AboutPage'));
 
 function RouteFallback() {
   return (
-    <div className="min-h-[calc(100vh-56px-80px)] px-4 py-10">
+    <div className="min-h-[var(--shell-content-min-height)] px-4 py-10">
       <div className="mx-auto flex max-w-[1280px] flex-col gap-4">
         <div className="skeleton h-10 w-56 rounded" />
         <div className="skeleton h-6 w-80 rounded" />
