@@ -330,18 +330,13 @@ export default function LandingPage() {
         </p>
 
         {showLiveStrip && (
-          <div className="w-[calc(100vw-2rem)] max-w-5xl overflow-x-auto">
-            <div className="mx-auto flex min-w-max items-center justify-center gap-4 px-2">
-              {liveCompanies.map((company, index) => (
-                <React.Fragment key={company.ticker}>
-                  {index > 0 && (
-                    <span className="font-data text-sm text-text-tertiary" aria-hidden="true">
-                      ·
-                    </span>
-                  )}
+          <div className="w-full max-w-5xl">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
+                {liveCompanies.map((company) => (
                   <button
+                    key={company.ticker}
                     type="button"
-                    className="inline-flex items-center gap-2 font-data text-sm transition-colors hover:text-accent"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 font-data text-sm transition-colors hover:border-accent hover:bg-hover sm:min-h-0 sm:rounded-none sm:border-none sm:bg-transparent sm:px-0 sm:py-0 sm:hover:bg-transparent sm:hover:text-accent"
                     onClick={() => navigate(`/stock/${company.ticker}`)}
                   >
                     <span className="font-bold text-accent">{company.ticker}</span>
@@ -356,8 +351,7 @@ export default function LandingPage() {
                       </span>
                     )}
                   </button>
-                </React.Fragment>
-              ))}
+                ))}
             </div>
           </div>
         )}
