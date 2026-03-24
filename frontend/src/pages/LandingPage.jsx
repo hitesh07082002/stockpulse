@@ -330,7 +330,7 @@ export default function LandingPage() {
         </p>
 
         {showLiveStrip && (
-          <div className="w-full overflow-x-auto">
+          <div className="w-[calc(100vw-2rem)] max-w-5xl overflow-x-auto">
             <div className="mx-auto flex min-w-max items-center justify-center gap-4 px-2">
               {liveCompanies.map((company, index) => (
                 <React.Fragment key={company.ticker}>
