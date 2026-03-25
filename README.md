@@ -26,6 +26,15 @@ make dev
 # Backend: http://localhost:8000
 ```
 
+## Django Admin
+
+```bash
+venv/bin/python backend/manage.py createsuperuser
+make dev
+```
+
+Then open [http://localhost:8000/admin/](http://localhost:8000/admin/) and sign in with the superuser you created. The admin is an operator surface for browsing companies, financial facts, snapshots, ingestion runs, price cache rows, raw SEC payloads, and AI usage counters.
+
 Optional local container flow:
 
 ```bash
