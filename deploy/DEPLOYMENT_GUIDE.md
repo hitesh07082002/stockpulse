@@ -301,7 +301,7 @@ git merge rewrite/v1    # or create a PR and merge
 git push origin main
 ```
 
-GitHub Actions will: build image → push to GHCR → SSH deploy → migrate → health check.
+GitHub Actions will: build image → push to GHCR → sync the committed `docker-compose.yml` to `/opt/stockpulse` → SSH deploy → migrate → health check.
 The deploy workflow also pins `APP_IMAGE_TAG` to the exact commit SHA that passed CI and verifies that `stockpulse-web` is running that same SHA-tagged image.
 
 Important note:
