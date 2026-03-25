@@ -54,6 +54,7 @@ async function buildApiError(response) {
   error.status = response.status;
   error.statusText = response.statusText;
   error.payload = errorPayload;
+  error.code = errorPayload?.code ?? null;
 
   return error;
 }
@@ -118,6 +119,15 @@ function extractRemainingQuota(payload) {
   return null;
 }
 
+function parseNumericField(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function normalizeCopilotStreamEvent(payload) {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -144,6 +154,10 @@ export function normalizeCopilotStreamEvent(payload) {
       type: 'error',
       message: String(payload.message ?? payload.content ?? payload.error ?? 'Stream error'),
       code: payload.code ?? payload.error_code ?? null,
+      status: parseNumericField(payload.status),
+      provider: payload.provider ?? null,
+      retryable: payload.retryable === undefined ? null : Boolean(payload.retryable),
+      partial: Boolean(payload.partial),
       remainingQuota: extractRemainingQuota(payload),
     };
   }
@@ -253,6 +267,22 @@ export async function registerAuth(payload) {
 
 export async function loginAuth(payload) {
   return post('/auth/login/', payload);
+}
+
+export async function resendEmailVerification(payload) {
+  return post('/auth/email-verification/resend/', payload);
+}
+
+export async function confirmEmailVerification(payload) {
+  return post('/auth/email-verification/confirm/', payload);
+}
+
+export async function requestPasswordReset(payload) {
+  return post('/auth/password-reset/request/', payload);
+}
+
+export async function confirmPasswordReset(payload) {
+  return post('/auth/password-reset/confirm/', payload);
 }
 
 export async function refreshAuth() {
@@ -396,6 +426,11 @@ export async function* sendChatMessage(ticker, message, history = []) {
   }
 
   if (!sawTerminalEvent) {
-    throw new Error('Stream ended unexpectedly.');
+    const error = new Error('The response stream ended unexpectedly. Please try again.');
+    error.payload = {
+      code: 'stream_ended_unexpectedly',
+      retryable: true,
+    };
+    throw error;
   }
 }

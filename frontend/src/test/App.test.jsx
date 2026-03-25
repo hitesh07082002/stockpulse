@@ -104,7 +104,7 @@ describe('App routes', () => {
       screen.getByPlaceholderText(/search by ticker or company name/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/500 companies · 30yr sec filings · updated daily/i),
+      screen.getByText(/500 companies · 30yr sec filings · prices refresh every 15 min/i),
     ).toBeInTheDocument();
   });
 

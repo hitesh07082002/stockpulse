@@ -1127,6 +1127,67 @@ def test_update_prices_uses_ingestion_run_and_quote_timestamp(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_update_prices_handles_multiple_companies_with_worker_pool(monkeypatch):
+    first = Company.objects.create(ticker="AAA", name="Alpha", cik="1111111111")
+    second = Company.objects.create(ticker="BBB", name="Beta", cik="2222222222")
+    seen_tickers = []
+
+    def fake_fetch_quote_snapshot(ticker):
+        seen_tickers.append(ticker)
+        return update_prices_command.QuoteSnapshot(
+            current_price=Decimal("101.00") if ticker == "AAA" else Decimal("202.00"),
+            market_cap=100 if ticker == "AAA" else 200,
+            week_52_high=Decimal("111.00"),
+            week_52_low=Decimal("90.00"),
+            shares_outstanding=1000 if ticker == "AAA" else 2000,
+        )
+
+    monkeypatch.setattr(update_prices_command, "fetch_quote_snapshot", fake_fetch_quote_snapshot)
+
+    call_command("update_prices", "--workers", "2")
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+
+    assert seen_tickers == ["AAA", "BBB"]
+    assert first.current_price == Decimal("101.00")
+    assert second.current_price == Decimal("202.00")
+    assert IngestionRun.objects.filter(source=IngestionRun.SOURCE_PRICES, status=IngestionRun.STATUS_SUCCESS).count() == 2
+
+
+@pytest.mark.django_db
+def test_update_prices_marks_failures_without_stopping_remaining_tickers(monkeypatch):
+    first = Company.objects.create(ticker="AAA", name="Alpha", cik="1111111111")
+    second = Company.objects.create(ticker="BBB", name="Beta", cik="2222222222")
+
+    def fake_fetch_quote_snapshot(ticker):
+        if ticker == "AAA":
+            raise ValueError("boom")
+        return update_prices_command.QuoteSnapshot(
+            current_price=Decimal("202.00"),
+            market_cap=200,
+            week_52_high=Decimal("210.00"),
+            week_52_low=Decimal("180.00"),
+            shares_outstanding=2000,
+        )
+
+    monkeypatch.setattr(update_prices_command, "fetch_quote_snapshot", fake_fetch_quote_snapshot)
+
+    call_command("update_prices", "--workers", "2")
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+
+    failed_run = IngestionRun.objects.get(company=first, source=IngestionRun.SOURCE_PRICES)
+    successful_run = IngestionRun.objects.get(company=second, source=IngestionRun.SOURCE_PRICES)
+
+    assert first.current_price is None
+    assert second.current_price == Decimal("202.00")
+    assert failed_run.status == IngestionRun.STATUS_FAILED
+    assert successful_run.status == IngestionRun.STATUS_SUCCESS
+
+
+@pytest.mark.django_db
 def test_ingest_financials_dedupes_period_end_collisions_deterministically():
     company = Company.objects.create(ticker="DUP", name="Duplicate Corp", cik="9999999999")
     command = ingest_financials_command.Command()

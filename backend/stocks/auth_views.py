@@ -1,16 +1,22 @@
+import logging
+
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.http import HttpResponse, HttpResponseRedirect
 from django.middleware.csrf import get_token
 from django.utils.html import escape
+from django_ratelimit.core import is_ratelimited
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .auth_services import (
+    AmbiguousEmailError,
+    EmailConflictError,
     GoogleOAuthError,
     authenticate_password_user,
     build_frontend_redirect,
@@ -20,14 +26,31 @@ from .auth_services import (
     clear_auth_cookies,
     create_password_user,
     exchange_google_code_for_tokens,
+    find_email_verification_user,
+    find_password_reset_user,
     fetch_google_profile,
+    get_user_by_email,
     google_oauth_is_configured,
+    is_email_verified,
     issue_refresh_token,
     link_or_create_google_user,
+    mark_user_email_verified,
     read_google_state,
+    resolve_email_verification_user,
+    resolve_password_reset_user,
+    send_email_verification_email,
+    send_password_reset_email,
     set_auth_cookies,
+    update_user_password,
 )
 from .authentication import CookieJWTAuthentication
+
+logger = logging.getLogger(__name__)
+PASSWORD_RESET_REQUEST_MESSAGE = "If an account exists for that email, we sent a reset link."
+EMAIL_VERIFICATION_REQUEST_MESSAGE = "If an account exists for that email, we sent a verification link."
+REGISTER_VERIFICATION_MESSAGE = "Check your inbox to verify your email before signing in."
+EMAIL_VERIFICATION_SUCCESS_MESSAGE = "Email verified. You can sign in now."
+EMAIL_VERIFICATION_REQUIRED_ERROR = "Verify your email before signing in."
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -36,13 +59,7 @@ class RegisterSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate_email(self, value):
-        from django.contrib.auth import get_user_model
-
-        normalized = value.strip().lower()
-        User = get_user_model()
-        if User.objects.filter(email__iexact=normalized).exists():
-            raise serializers.ValidationError("An account already exists for that email.")
-        return normalized
+        return value.strip().lower()
 
     def validate_password(self, value):
         validate_password(value)
@@ -52,6 +69,35 @@ class RegisterSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(max_length=128, trim_whitespace=False)
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False)
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+
+class EmailVerificationResendSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class EmailVerificationConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
 
 
 def _session_payload(user=None, *, has_refresh_session=False):
@@ -68,7 +114,7 @@ def _session_payload(user=None, *, has_refresh_session=False):
                 else settings.AI_DAILY_LIMIT_ANONYMOUS
             ),
         },
-        "google_signin_available": google_oauth_is_configured() or settings.DEBUG,
+        "google_signin_available": google_oauth_is_configured() or settings.ENABLE_GOOGLE_OAUTH_MOCK,
         "has_refresh_session": has_refresh_session,
     }
 
@@ -81,6 +127,17 @@ def _response_with_auth(request, user, *, http_status=status.HTTP_200_OK):
         status=http_status,
     )
     return set_auth_cookies(response, refresh_token)
+
+
+def _is_auth_rate_limited(request, *, group: str, rate: str) -> bool:
+    return is_ratelimited(
+        request=request,
+        group=group,
+        key="ip",
+        rate=rate,
+        method=["POST"],
+        increment=True,
+    )
 
 
 @api_view(["GET"])
@@ -103,21 +160,113 @@ def session_view(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def register_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.register",
+        rate=settings.AUTH_REGISTER_RATE,
+    ):
+        return Response(
+            {"error": "Too many sign-up attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     serializer = RegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    user = create_password_user(
-        serializer.validated_data["email"],
-        serializer.validated_data["password"],
-        serializer.validated_data.get("name", ""),
+    email = serializer.validated_data["email"]
+    try:
+        existing_user = get_user_by_email(email)
+    except AmbiguousEmailError:
+        return Response(
+            {
+                "error": "We couldn't create that account right now. Contact the site owner.",
+                "code": "email_conflict",
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    if existing_user:
+        if existing_user.has_usable_password() and not is_email_verified(existing_user):
+            try:
+                send_email_verification_email(existing_user)
+            except Exception:
+                logger.exception("Verification email resend failed during register for user_id=%s", existing_user.id)
+            return Response(
+                {
+                    "message": REGISTER_VERIFICATION_MESSAGE,
+                    "email": existing_user.email,
+                    "email_verification_required": True,
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+        if not existing_user.has_usable_password():
+            return Response(
+                {
+                    "error": "This email is already linked to Google. Use Google sign-in instead.",
+                    "code": "google_account_only",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {
+                "error": "An account already exists for that email.",
+                "code": "email_already_exists",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        user = create_password_user(
+            email,
+            serializer.validated_data["password"],
+            serializer.validated_data.get("name", ""),
+        )
+    except EmailConflictError:
+        return Response(
+            {
+                "error": "An account already exists for that email.",
+                "code": "email_already_exists",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        send_email_verification_email(user)
+    except Exception:
+        logger.exception("Verification email failed for user_id=%s", user.id)
+        return Response(
+            {
+                "error": "We couldn't send the verification email right now. Try again soon.",
+                "code": "verification_delivery_failed",
+                "email": user.email,
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    return Response(
+        {
+            "message": REGISTER_VERIFICATION_MESSAGE,
+            "email": user.email,
+            "email_verification_required": True,
+        },
+        status=status.HTTP_202_ACCEPTED,
     )
-    return _response_with_auth(request, user, http_status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def login_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.login",
+        rate=settings.AUTH_LOGIN_RATE,
+    ):
+        return Response(
+            {"error": "Too many sign-in attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -125,10 +274,20 @@ def login_view(request):
         serializer.validated_data["email"],
         serializer.validated_data["password"],
     )
-    if not user:
+    if not user or not user.is_active:
         return Response(
             {"error": "Invalid email or password."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not is_email_verified(user):
+        return Response(
+            {
+                "error": EMAIL_VERIFICATION_REQUIRED_ERROR,
+                "code": "email_verification_required",
+                "email": user.email,
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     return _response_with_auth(request, user)
@@ -150,7 +309,7 @@ def refresh_view(request):
     try:
         refresh_token = RefreshToken(raw_token)
         user = CookieJWTAuthentication().get_user(refresh_token)
-    except TokenError:
+    except (TokenError, AuthenticationFailed):
         response = Response(
             {"error": "Refresh session expired. Sign in again."},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -168,6 +327,122 @@ def logout_view(request):
     get_token(request)
     response = Response({"ok": True})
     return clear_auth_cookies(response)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def password_reset_request_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.password_reset.request",
+        rate=settings.PASSWORD_RESET_REQUEST_RATE,
+    ):
+        return Response(
+            {"error": "Too many reset attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = find_password_reset_user(serializer.validated_data["email"])
+    if user:
+        try:
+            send_password_reset_email(user)
+        except Exception:
+            logger.exception("Password reset email failed for user_id=%s", user.id)
+
+    return Response({"message": PASSWORD_RESET_REQUEST_MESSAGE})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def email_verification_resend_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.email_verification.resend",
+        rate=settings.EMAIL_VERIFICATION_RESEND_RATE,
+    ):
+        return Response(
+            {"error": "Too many verification attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = EmailVerificationResendSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = find_email_verification_user(serializer.validated_data["email"])
+    if user:
+        try:
+            send_email_verification_email(user)
+        except Exception:
+            logger.exception("Verification resend email failed for user_id=%s", user.id)
+
+    return Response({"message": EMAIL_VERIFICATION_REQUEST_MESSAGE})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def email_verification_confirm_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.email_verification.confirm",
+        rate=settings.EMAIL_VERIFICATION_CONFIRM_RATE,
+    ):
+        return Response(
+            {"error": "Too many verification attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = EmailVerificationConfirmSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = resolve_email_verification_user(
+        serializer.validated_data["uid"],
+        serializer.validated_data["token"],
+    )
+    if not user:
+        return Response(
+            {"error": "This verification link is invalid or has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    mark_user_email_verified(user)
+    return Response({"message": EMAIL_VERIFICATION_SUCCESS_MESSAGE})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def password_reset_confirm_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.password_reset.confirm",
+        rate=settings.PASSWORD_RESET_CONFIRM_RATE,
+    ):
+        return Response(
+            {"error": "Too many reset attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = resolve_password_reset_user(
+        serializer.validated_data["uid"],
+        serializer.validated_data["token"],
+    )
+    if not user:
+        return Response(
+            {"error": "This reset link is invalid or has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    update_user_password(user, serializer.validated_data["password"])
+    return Response({"message": "Password updated. Sign in with your new password."})
 
 
 @api_view(["GET"])
@@ -191,7 +466,7 @@ def google_start_view(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def google_mock_consent_view(request):
-    if not settings.DEBUG:
+    if not settings.ENABLE_GOOGLE_OAUTH_MOCK:
         return HttpResponse(status=404)
 
     state = request.query_params.get("state", "")
@@ -254,7 +529,7 @@ def google_callback_view(request):
     redirect_next = state_payload["next"]
 
     try:
-        if request.query_params.get("mock") == "1" and settings.DEBUG:
+        if request.query_params.get("mock") == "1" and settings.ENABLE_GOOGLE_OAUTH_MOCK:
             profile = build_mock_google_profile(
                 request.query_params.get("email"),
                 request.query_params.get("name"),

@@ -1,7 +1,7 @@
 # StockPulse Architecture
 
-**Status:** Drafted from the final V1 plan  
-**Date:** Mar 22, 2026  
+**Status:** Current V1 architecture baseline
+**Date:** Mar 22, 2026
 **Source docs:** [`spec.md`](./spec.md), [`plan.md`](./plan.md), [`DESIGN.md`](./DESIGN.md), [`cicd.md`](./cicd.md)
 
 ## Goal
@@ -118,6 +118,7 @@ Responsibilities:
 
 Current M4 behavior:
 - `update_prices` maintains `Company.current_price`, `market_cap`, `week_52_high`, `week_52_low`, `shares_outstanding`, and `quote_updated_at`
+- `update_prices` now uses a bounded worker pool so the quote sweep stays deterministic but no longer refreshes the full universe strictly ticker-by-ticker
 - `/api/companies/:ticker/prices` reads through `PriceCache`
 - on cache miss or expired cache, the endpoint refreshes that range from `yfinance`, stores it in `PriceCache`, and returns the cached payload
 - if the refresh fails but an older cached range exists, the stale cached payload is served with `stale=true`
@@ -136,6 +137,7 @@ Read APIs exist for:
 Design rules:
 - public browsing endpoints stay open
 - screener reads `MetricSnapshot`, not raw fact joins
+- screener filtering and valuation-default calculation live behind helper modules rather than growing the HTTP view layer
 - financial endpoints expose canonical values only
 - financial and valuation visuals use dashboard-style charts, while the dedicated price surface uses a separate market-chart library
 - valuation inputs support two calculator modes: `Earnings` and `Cash Flow`, where `Cash Flow` uses free cash flow per share
@@ -157,8 +159,13 @@ Google redirect ─┘
 Rules:
 - browsing is public
 - Google sign-in is the primary V1 auth path, with email/password available as fallback
+- password-based accounts must verify their email before the first successful login
+- email uniqueness is enforced case-insensitively at the database boundary
+- password reset is email-based and points back to the frontend over a configured `FRONTEND_APP_ORIGIN`
 - Google auth is backend-managed redirect/callback, not a frontend token-post flow
 - JWTs live in `httpOnly` cookies
+- password changes invalidate previously issued JWT cookies via token revocation checks
+- Google sign-in may auto-link to an existing unverified password account and mark that shared email verified
 - refresh is cookie-based; the frontend does not store refresh tokens
 - frontend shell state bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie used by state-changing auth requests and includes whether a refresh cookie is present so anonymous sessions do not generate noisy failed refresh calls
 - local development may use a debug-only mock Google consent page when real Google OAuth credentials are absent; production never uses that harness
@@ -195,6 +202,8 @@ Provider contract:
 - Gemini copilot requests default to a zero thinking budget on this grounded V1 path so hidden reasoning does not consume the visible answer budget
 - the frontend only sees canonical SSE JSON frames: `meta`, `text`, `error`, `done`
 - provider-native event formats stay behind the adapter boundary
+- zero-output provider failures refund the reserved daily quota instead of charging the user for an empty answer
+- SSE `error` frames preserve normalized provider metadata such as code, provider name, retryability, and upstream status where available
 
 Conversation scope:
 - bounded follow-up context comes from the active browser session
@@ -208,6 +217,7 @@ What it does not use:
 
 Grounding and cost rules:
 - StockPulse structured data is the primary company-specific grounding source
+- annual and quarterly StockPulse series are always treated as reported historical periods, never as implicit forecasts
 - the model may use general financial knowledge to explain why metrics changed or what a ratio generally implies
 - answers should distinguish StockPulse data from general context when both are used
 - cost safety is operational, not database-enforced: load limited credits on the provider API key and rely on in-app quota plus burst limits

@@ -101,6 +101,44 @@ def test_compute_snapshots_is_idempotent_and_overwrites_existing_snapshot():
 
 
 @pytest.mark.django_db
+def test_compute_snapshots_uses_average_equity_for_roe_when_prior_period_exists():
+    company = Company.objects.create(
+        cik="0001652044",
+        ticker="GOOG",
+        name="Alphabet Inc.",
+        current_price=Decimal("150.00"),
+    )
+    _annual_fact(company, "revenue", 2023, "1000")
+    _annual_fact(company, "revenue", 2024, "1100")
+    _annual_fact(company, "net_income", 2024, "220")
+    _annual_fact(company, "shareholders_equity", 2023, "800")
+    _annual_fact(company, "shareholders_equity", 2024, "1000")
+
+    call_command("compute_snapshots")
+
+    snapshot = MetricSnapshot.objects.get(company=company)
+    assert snapshot.roe == Decimal("0.2444")
+
+
+@pytest.mark.django_db
+def test_compute_snapshots_includes_zero_previous_equity_in_roe_average():
+    company = Company.objects.create(
+        cik="0001652044",
+        ticker="META",
+        name="Meta Platforms, Inc.",
+        current_price=Decimal("500.00"),
+    )
+    _annual_fact(company, "net_income", 2024, "100")
+    _annual_fact(company, "shareholders_equity", 2023, "0")
+    _annual_fact(company, "shareholders_equity", 2024, "200")
+
+    call_command("compute_snapshots")
+
+    snapshot = MetricSnapshot.objects.get(company=company)
+    assert snapshot.roe == Decimal("1.0000")
+
+
+@pytest.mark.django_db
 def test_compute_snapshots_deletes_stale_snapshot_without_annual_facts():
     company = Company.objects.create(
         cik="0001652044",

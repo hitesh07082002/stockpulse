@@ -19,16 +19,16 @@ That means:
 ## 2.0 Repository and Branch Strategy
 
 - `main` remains the long-term protected branch
-- the current pre-rewrite app should be preserved with a legacy branch or tag such as `legacy/pre-rewrite`
-- active rebuild work can happen on a dedicated rewrite branch until the new foundation is ready
+- feature work happens on short-lived branches and lands through pull requests
 - no direct pushes to protected `main`
 - all production-bound changes land through pull requests
+- branch protection is still a remaining hardening task, not a confirmed live repo setting
 
 ## 3.0 CI Strategy
 
 ## 3.1 Required PR Checks
 
-Every pull request to `main` should run these required checks in parallel where possible:
+Every pull request to `main` should run these checks in parallel where possible:
 
 1. backend lint and static checks
 2. backend tests
@@ -39,16 +39,15 @@ Every pull request to `main` should run these required checks in parallel where 
 7. frontend build
 8. end-to-end smoke
 
-`main` should not be mergeable unless all required checks pass.
+Today these are implemented in GitHub Actions as `Backend checks`, `Frontend checks`, and `Playwright smoke`. Branch protection should later mark them as required.
 
 ## 3.2 Backend CI
 
-Run on GitHub Actions because the repo is hosted on GitHub.
+Runs on GitHub Actions because the repo is hosted on GitHub.
 
 Recommended backend CI gates:
 - install Python from a pinned version
 - install backend dependencies from [`backend/requirements.txt`](./backend/requirements.txt)
-- run `ruff` once it is added in M1
 - run Django config/system checks
 - run pytest against PostgreSQL 16, not SQLite
 - publish backend coverage outputs for the `stocks` app
@@ -60,7 +59,7 @@ Recommended frontend CI gates:
 - use a pinned Node version
 - run `npm ci` in [`frontend`](./frontend)
 - run ESLint
-- run Vitest once added in M1
+- run Vitest
 - publish V8 coverage outputs for `frontend/src`
 - run Vite production build
 
@@ -77,6 +76,7 @@ Critical smoke path:
 - search works
 - stock detail opens
 - Financials tab renders
+- mobile screener and stock-detail responsive flows stay usable
 - Google auth entry point is present
 - anonymous AI quota flow works
 
@@ -87,23 +87,25 @@ When smoke fails, CI should upload:
 
 ## 3.5 CI Quality Features
 
-For excellent CI quality, use these defaults:
+The current CI already uses several strong defaults:
 - GitHub Actions concurrency cancellation on superseded PR pushes
 - dependency caching for Python and Node
 - separate fast jobs from slower smoke jobs
 - artifact upload for test reports and coverage outputs
+
+Still recommended as follow-up hardening:
 - branch protection requiring up-to-date checks before merge
 - a scheduled security workflow for dependency and code scanning
 
 ## 3.6 Security and Supply Chain
 
-Recommended recurring CI jobs:
+Recommended recurring CI jobs for the next hardening pass:
 - CodeQL for Python and JavaScript
 - dependency audit for Python and npm
 - secret scanning on push and PR
 - Dependabot or Renovate for dependency updates
 
-These do not all need to block early feature work, but they should exist before launch.
+These are not all wired today, so they remain hardening work rather than current guarantees.
 
 ## 4.0 CD Strategy
 
@@ -123,9 +125,9 @@ Build once, deploy many.
 
 Recommended approach:
 - build immutable Docker images tagged by commit SHA
-- also publish `latest` for the production server's steady-state pull target
 - serve the React SPA from the same Django image via WhiteNoise
 - never rebuild the same revision twice for production
+- production deploys must reference the exact commit SHA that passed CI; no mutable `latest` tag in the deploy path
 
 ## 4.3 Environment Flow
 
@@ -134,17 +136,24 @@ Current V1 environment chain:
 1. pull request CI on GitHub Actions
 2. merge or push to `main`
 3. GitHub Actions builds and pushes the production image to GHCR
-4. the deploy workflow SSHes to the server, runs `docker compose pull`, `docker compose up -d --remove-orphans`, then runs `python manage.py migrate --noinput`
-5. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
+4. the deploy workflow SSHes to the server, writes `APP_IMAGE_TAG=<commit-sha>` into the production `.env`, then runs `docker compose pull web` and `docker compose up -d --remove-orphans` with that exact SHA
+5. the workflow runs `python manage.py check --deploy --fail-level WARNING`, then `python manage.py migrate --noinput`
+6. the workflow verifies that the running `stockpulse-web` container was started from the expected SHA-tagged image
+7. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
 
 There is no separate staging environment in the current V1 deployment contract.
 
 Environment secrets now required for M6+:
 - `SECRET_KEY`
 - `DATABASE_URL`
+- `FRONTEND_APP_ORIGIN`
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI`
+- `EMAIL_BACKEND`
+- `DEFAULT_FROM_EMAIL`
+- `EMAIL_HOST` when SMTP is used
+- `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` when the provider requires auth
 - `AI_PROVIDER`
 - `ANTHROPIC_API_KEY` for the production-default provider, or `GEMINI_API_KEY` for local/dev/staging where Gemini is used
 - `ANTHROPIC_MODEL` or `GEMINI_MODEL` if overriding defaults
@@ -165,7 +174,7 @@ Rules:
 
 Every production deploy should run:
 - health check against the backend
-- manual smoke for landing, stock detail, auth presence, and AI streaming after the server is live
+- manual smoke for landing, stock detail, auth presence, email-verification delivery, password-reset request, and AI streaming after the server is live
 
 For gstack, the most useful deployment-adjacent skills later are:
 - `setup-deploy`
@@ -175,8 +184,8 @@ For gstack, the most useful deployment-adjacent skills later are:
 ## 4.6 Rollback Strategy
 
 Rollback must be boring:
-- keep the previous deployable image available
-- allow one-click or one-command redeploy of the last known good release
+- keep previous SHA-tagged deployable images available in GHCR
+- allow one-command redeploy of the last known good SHA by updating `APP_IMAGE_TAG`
 - avoid schema changes that make rollback impossible in the same release
 - if a migration is not safely reversible, document the forward-fix path before deploy
 
@@ -190,7 +199,7 @@ Recommended workflows:
   - frontend lint/test/build
   - Playwright smoke
 
-- `.github/workflows/security.yml`
+- optional follow-up security workflow
   - CodeQL
   - dependency audit
   - secret scanning hooks if needed

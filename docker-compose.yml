@@ -1,12 +1,12 @@
 services:
   web:
-    image: ghcr.io/hitesh07082002/stockpulse:latest
+    image: ghcr.io/hitesh07082002/stockpulse:${APP_IMAGE_TAG:?APP_IMAGE_TAG is required}
     container_name: stockpulse-web
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
       - path: .env
-        required: false
+        required: true
     depends_on:
       db:
         condition: service_healthy

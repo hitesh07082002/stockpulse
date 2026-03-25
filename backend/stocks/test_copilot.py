@@ -17,6 +17,7 @@ from stocks.ai_providers import (
     AnthropicProvider,
     GeminiProvider,
     ProviderEvent,
+    ProviderResponseError,
     ProviderTimeoutError,
     ProviderUsage,
     _extract_gemini_text_delta,
@@ -234,6 +235,8 @@ def test_system_prompt_contains_analysis_framework(company):
 
     assert "sharp equity research analyst" in prompt
     assert "industry trends, macro context, competitive dynamics, and general finance principles" in prompt
+    assert "reported historical company data, not a forecast or projection" in prompt
+    assert "label them clearly as general analysis or scenario thinking" in prompt
     assert "Focus on trend detection, period comparisons, ratio interpretation" in prompt
     assert "Use markdown with short headers, **bold** key numbers, and tables" in prompt
     assert "Never predict future stock prices or guarantee outcomes." in prompt
@@ -532,6 +535,68 @@ def test_copilot_endpoint_handles_provider_timeout_during_stream(api_client, com
     assert '"type": "error"' in stream_text
     assert '"code": "provider_timeout"' in stream_text
     assert '"partial": true' in stream_text
+    assert AIUsageCounter.objects.get(day=current_ai_day()).request_count == 1
+
+
+@pytest.mark.django_db
+def test_copilot_endpoint_refunds_quota_when_provider_times_out_before_text(
+    api_client,
+    company,
+    monkeypatch,
+):
+    class TimeoutBeforeTextProvider:
+        name = "anthropic"
+
+        def ensure_configured(self):
+            return None
+
+        def stream_response(self, *, system_prompt, conversation):
+            raise ProviderTimeoutError("Anthropic timed out.", provider=self.name)
+
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: TimeoutBeforeTextProvider())
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Why did margins change?"},
+        format="json",
+    )
+    stream_text = collect_stream(response)
+
+    assert response.status_code == 200
+    assert '"code": "provider_timeout"' in stream_text
+    assert '"partial": false' in stream_text
+    assert '"remaining_quota": 10' in stream_text
+    assert AIUsageCounter.objects.get(day=current_ai_day()).request_count == 0
+
+
+@pytest.mark.django_db
+def test_copilot_endpoint_refunds_quota_when_provider_returns_no_text(
+    api_client,
+    company,
+    monkeypatch,
+):
+    class EmptyProvider:
+        name = "gemini"
+
+        def ensure_configured(self):
+            return None
+
+        def stream_response(self, *, system_prompt, conversation):
+            yield ProviderEvent(type="usage", usage=ProviderUsage(input_tokens=10, output_tokens=0))
+
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: EmptyProvider())
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Why did margins change?"},
+        format="json",
+    )
+    stream_text = collect_stream(response)
+
+    assert response.status_code == 200
+    assert '"code": "provider_empty_response"' in stream_text
+    assert '"remaining_quota": 10' in stream_text
+    assert AIUsageCounter.objects.get(day=current_ai_day()).request_count == 0
 
 
 @pytest.mark.django_db
@@ -560,3 +625,37 @@ def test_copilot_endpoint_reports_provider_unavailable(api_client, company):
 
     assert response.status_code == 503
     assert response.json()["code"] == "provider_unavailable"
+
+
+@pytest.mark.django_db
+def test_copilot_endpoint_preserves_provider_metadata_on_stream_error(api_client, company, monkeypatch):
+    class RateLimitedProvider:
+        name = "gemini"
+
+        def ensure_configured(self):
+            return None
+
+        def stream_response(self, *, system_prompt, conversation):
+            raise ProviderResponseError(
+                "Upstream 429",
+                code="provider_rate_limited",
+                provider=self.name,
+                status_code=429,
+                retryable=True,
+            )
+
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: RateLimitedProvider())
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Hello"},
+        format="json",
+    )
+    stream_text = collect_stream(response)
+
+    assert response.status_code == 200
+    assert '"code": "provider_rate_limited"' in stream_text
+    assert '"status": 429' in stream_text
+    assert '"provider": "gemini"' in stream_text
+    assert '"retryable": true' in stream_text
+    assert AIUsageCounter.objects.get(day=current_ai_day()).request_count == 0

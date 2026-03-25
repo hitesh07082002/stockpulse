@@ -67,6 +67,7 @@ Includes:
 - quote and day change
 - business context
 - fast scan cards driven by `MetricSnapshot`
+- overview metrics include margin, growth, free-cash-flow, and ROE context from the latest snapshot
 
 ### 4. Financials
 
@@ -75,6 +76,7 @@ Purpose:
 
 Includes:
 - normalized annual and quarterly financial series
+- derived margin, free-cash-flow, and ROE chart series when the raw SEC facts support them
 - strong default chart choices
 - trust-building tables below the visual story
 - metric switching without dashboard clutter
@@ -153,6 +155,7 @@ Includes:
 - curated results table
 - sortable columns
 - API-driven filtering and sorting over `MetricSnapshot`
+- mobile filter sheet and stacked result cards on smaller screens
 
 Does not include:
 - saved screens
@@ -169,8 +172,11 @@ Includes:
 - bounded follow-up questions from the active browser session
 - SSE streaming responses
 - answers grounded primarily in structured StockPulse data, with general financial knowledge allowed for context and explanation
+- historical annual and quarterly StockPulse series explicitly treated as reported results, not projections
 - honesty about sparse or weak coverage
-- explicit quota, timeout, and provider-unavailable states
+- explicit quota, timeout, empty-response, and provider-unavailable states
+- quota refunds when the provider fails before returning any answer text
+- no empty assistant bubble after failed streams
 - anonymous quota exhaustion -> sign-in upgrade path
 
 Limits:
@@ -190,10 +196,14 @@ Purpose:
 
 Includes:
 - Google sign-in as the primary auth path through a backend-managed redirect/callback flow
-- email/password fallback
+- email/password fallback with email verification required before first login
+- email-based password reset and recovery
+- case-insensitive unique email enforcement at the database boundary
 - secure cookie-based auth
+- password changes invalidating pre-reset JWT cookie sessions immediately
 - frontend auth context bootstrapped through `/api/auth/session/`, including a refresh-session hint so fully anonymous browsing does not spam failed refresh attempts
 - login/register modal or drawer
+- verification resend + confirm flows on the frontend
 - shell-level sign-in entry points in the global header and AI tab
 
 Does not include:

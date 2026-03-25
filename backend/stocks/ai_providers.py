@@ -8,15 +8,51 @@ from django.conf import settings
 
 
 class ProviderUnavailableError(Exception):
-    pass
+    def __init__(
+        self,
+        message,
+        *,
+        code="provider_unavailable",
+        provider=None,
+        status_code=None,
+        retryable=True,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.provider = provider
+        self.status_code = status_code
+        self.retryable = retryable
 
 
 class ProviderTimeoutError(Exception):
-    pass
+    def __init__(self, message, *, provider=None, status_code=None, retryable=True):
+        super().__init__(message)
+        self.message = message
+        self.code = "provider_timeout"
+        self.provider = provider
+        self.status_code = status_code
+        self.retryable = retryable
 
 
 class ProviderResponseError(Exception):
-    pass
+    def __init__(
+        self,
+        message,
+        *,
+        code="provider_unavailable",
+        provider=None,
+        status_code=None,
+        retryable=True,
+        upstream_message=None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.provider = provider
+        self.status_code = status_code
+        self.retryable = retryable
+        self.upstream_message = upstream_message or message
 
 
 @dataclass
@@ -77,7 +113,9 @@ class AnthropicProvider(BaseProvider):
     def ensure_configured(self):
         if not settings.ANTHROPIC_API_KEY:
             raise ProviderUnavailableError(
-                "The AI copilot is not available. Configure ANTHROPIC_API_KEY or switch AI_PROVIDER."
+                "The AI copilot is not available. Configure ANTHROPIC_API_KEY or switch AI_PROVIDER.",
+                provider=self.name,
+                retryable=False,
             )
 
     def stream_response(self, *, system_prompt, conversation):
@@ -109,9 +147,16 @@ class AnthropicProvider(BaseProvider):
                 )
         except Exception as exc:
             if exc.__class__.__name__ in {"APITimeoutError"}:
-                raise ProviderTimeoutError("Anthropic timed out.") from exc
+                raise ProviderTimeoutError("Anthropic timed out.", provider=self.name) from exc
             if exc.__class__.__name__ in {"APIError", "APIStatusError", "APIConnectionError"}:
-                raise ProviderResponseError("Anthropic request failed.") from exc
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                raise ProviderResponseError(
+                    "Anthropic request failed.",
+                    code=_provider_error_code(status_code),
+                    provider=self.name,
+                    status_code=status_code,
+                    retryable=_provider_error_is_retryable(status_code),
+                ) from exc
             raise
 
 
@@ -133,7 +178,9 @@ class GeminiProvider(BaseProvider):
     def ensure_configured(self):
         if not settings.GEMINI_API_KEY:
             raise ProviderUnavailableError(
-                "The AI copilot is not available. Configure GEMINI_API_KEY or switch AI_PROVIDER."
+                "The AI copilot is not available. Configure GEMINI_API_KEY or switch AI_PROVIDER.",
+                provider=self.name,
+                retryable=False,
             )
 
     def stream_response(self, *, system_prompt, conversation):
@@ -164,12 +211,23 @@ class GeminiProvider(BaseProvider):
                 timeout=(5, settings.AI_PROVIDER_TIMEOUT_SECONDS),
             )
         except requests.Timeout as exc:
-            raise ProviderTimeoutError("Gemini timed out.") from exc
+            raise ProviderTimeoutError("Gemini timed out.", provider=self.name) from exc
         except requests.RequestException as exc:
-            raise ProviderResponseError("Gemini request failed.") from exc
+            raise ProviderResponseError(
+                "Gemini request failed.",
+                code="provider_network_error",
+                provider=self.name,
+                retryable=True,
+            ) from exc
 
         if response.status_code >= 400:
-            raise ProviderResponseError(_gemini_error_message(response))
+            raise ProviderResponseError(
+                _gemini_error_message(response),
+                code=_provider_error_code(response.status_code),
+                provider=self.name,
+                status_code=response.status_code,
+                retryable=_provider_error_is_retryable(response.status_code),
+            )
 
         usage = ProviderUsage()
         accumulated_text = ""
@@ -184,9 +242,14 @@ class GeminiProvider(BaseProvider):
                     yield ProviderEvent(type="text", text=chunk_text)
                 usage = _extract_gemini_usage(payload) or usage
         except requests.Timeout as exc:
-            raise ProviderTimeoutError("Gemini timed out.") from exc
+            raise ProviderTimeoutError("Gemini timed out.", provider=self.name) from exc
         except requests.RequestException as exc:
-            raise ProviderResponseError("Gemini stream failed.") from exc
+            raise ProviderResponseError(
+                "Gemini stream failed.",
+                code="provider_stream_error",
+                provider=self.name,
+                retryable=True,
+            ) from exc
 
         yield ProviderEvent(type="usage", usage=usage)
 
@@ -198,7 +261,9 @@ def get_ai_provider():
     if provider_name == "gemini":
         return GeminiProvider()
     raise ProviderUnavailableError(
-        f"Unsupported AI provider '{provider_name}'. Set AI_PROVIDER to 'anthropic' or 'gemini'."
+        f"Unsupported AI provider '{provider_name}'. Set AI_PROVIDER to 'anthropic' or 'gemini'.",
+        provider=provider_name,
+        retryable=False,
     )
 
 
@@ -210,6 +275,20 @@ def estimate_tokens(text):
 
 def round_usd(value):
     return Decimal(value).quantize(Decimal("0.0001"))
+
+
+def _provider_error_code(status_code):
+    if status_code == 429:
+        return "provider_rate_limited"
+    if status_code and 400 <= status_code < 500:
+        return "provider_request_failed"
+    return "provider_unavailable"
+
+
+def _provider_error_is_retryable(status_code):
+    if status_code is None:
+        return True
+    return status_code >= 500 or status_code == 429
 
 
 def _anthropic_messages(conversation):

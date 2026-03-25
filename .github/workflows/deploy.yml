@@ -29,9 +29,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
@@ -41,9 +39,26 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd /opt/stockpulse
-            docker compose pull
-            docker compose up -d --remove-orphans
+
+            if grep -q '^APP_IMAGE_TAG=' .env; then
+              sed -i.bak "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${{ github.sha }}/" .env
+            else
+              echo "APP_IMAGE_TAG=${{ github.sha }}" >> .env
+            fi
+
+            APP_IMAGE_TAG=${{ github.sha }} docker compose pull web
+            APP_IMAGE_TAG=${{ github.sha }} docker compose up -d --remove-orphans
+            docker exec stockpulse-web python manage.py check --deploy --fail-level WARNING
             docker exec stockpulse-web python manage.py migrate --noinput
+
+            RUNNING_IMAGE=$(docker inspect stockpulse-web --format '{{.Config.Image}}')
+            case "$RUNNING_IMAGE" in
+              *:${{ github.sha }}) ;;
+              *)
+                echo "Unexpected running image: $RUNNING_IMAGE"
+                exit 1
+                ;;
+            esac
             sleep 5
             curl -sf \
               -H "Host: stockpulse.hiteshsadhwani.xyz" \

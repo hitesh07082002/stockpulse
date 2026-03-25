@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `rewrite/v1`.
+Implemented in the live app.
 
 Current state:
 - `python manage.py enrich_company_metadata` exists
@@ -144,7 +144,7 @@ Recommended cadence:
 - weekly refresh on the worker node
 - run after `ingest_companies`, not after `update_prices`
 
-This scheduling should be wired during M7 when cron or `systemd` timers are added.
+Current production cron runs this weekly after `ingest_companies`.
 
 ## Execution Order Used
 
@@ -152,4 +152,4 @@ This scheduling should be wired during M7 when cron or `systemd` timers are adde
 2. Add `company_metadata_overrides.csv`
 3. Run a one-time full backfill locally
 4. Audit coverage and fill gaps with overrides
-5. Add weekly scheduling in M7
+5. Wire weekly scheduling on the production node
