@@ -206,6 +206,7 @@ Choose a strong POSTGRES_PASSWORD and use it in both `POSTGRES_PASSWORD` and `DA
 Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS`/`FRONTEND_APP_ORIGIN` are missing, an insecure email backend is configured, `DEFAULT_FROM_EMAIL` is blank, SMTP is selected without `EMAIL_HOST`, or mock Google OAuth is left enabled.
 
 Password reset and email verification in production both depend on the SMTP settings above. After the first deploy, confirm that `/verify-email` and `/reset-password` both work against a real inbox.
+The `stocks.0005_user_email_ci_unique` migration also auto-reconciles any legacy duplicate `auth_user.email` rows by keeping the strongest account, clearing the duplicate email, and disabling the extra account before it creates the case-insensitive unique index.
 
 Save and exit (Ctrl+X, Y, Enter in nano).
 
