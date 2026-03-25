@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useCompanySearch } from '../hooks/useStockData';
 import { fetchPrices, fetchScreener } from '../utils/api';
 
@@ -355,21 +355,6 @@ export default function LandingPage() {
             </div>
           </div>
         )}
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm">
-          <Link
-            to="/screener"
-            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
-          >
-            Open screener →
-          </Link>
-          <Link
-            to="/about"
-            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
-          >
-            About →
-          </Link>
-        </div>
       </div>
     </section>
   );
