@@ -14,7 +14,7 @@ test('stock detail critical path renders the main research surfaces', async ({ p
   await expect(page.getByText('Adjusted close')).toBeVisible();
   await expect(page.getByRole('button', { name: '1Y' })).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Valuation' }).click();
+  await page.getByRole('tab', { name: 'DCF Calculator' }).click();
   await expect(page.getByRole('heading', { name: 'Assumptions' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '5-Year Projection' })).toBeVisible();
 
