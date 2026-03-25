@@ -8,6 +8,7 @@ const StockDetailPage = lazy(() => import('./pages/StockDetailPage'));
 const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const PasswordResetPage = lazy(() => import('./pages/PasswordResetPage'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 
 function RouteFallback() {
   return (
@@ -27,6 +28,14 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/verify-email"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <VerifyEmailPage />
+              </Suspense>
+            )}
+          />
           <Route
             path="/reset-password"
             element={(

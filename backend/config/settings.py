@@ -161,7 +161,7 @@ AUTHENTICATION_BACKENDS = [
 SITE_ID = 1
 ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
-ACCOUNT_EMAIL_VERIFICATION = 'none'
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': ['profile', 'email'],
@@ -204,6 +204,10 @@ EMAIL_USE_TLS = parse_bool_env(os.getenv('EMAIL_USE_TLS'), default=not DEBUG)
 EMAIL_USE_SSL = parse_bool_env(os.getenv('EMAIL_USE_SSL'), default=False)
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '15'))
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
+AUTH_REGISTER_RATE = os.getenv('AUTH_REGISTER_RATE', '5/h').strip()
+AUTH_LOGIN_RATE = os.getenv('AUTH_LOGIN_RATE', '10/m').strip()
+EMAIL_VERIFICATION_RESEND_RATE = os.getenv('EMAIL_VERIFICATION_RESEND_RATE', '5/h').strip()
+EMAIL_VERIFICATION_CONFIRM_RATE = os.getenv('EMAIL_VERIFICATION_CONFIRM_RATE', '15/h').strip()
 PASSWORD_RESET_REQUEST_RATE = os.getenv('PASSWORD_RESET_REQUEST_RATE', '5/h').strip()
 PASSWORD_RESET_CONFIRM_RATE = os.getenv('PASSWORD_RESET_CONFIRM_RATE', '10/h').strip()
 

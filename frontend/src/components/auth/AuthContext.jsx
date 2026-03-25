@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState('');
   const [authNotice, setAuthNotice] = useState(null);
 
-  async function hydrateSession({ allowRefresh = true } = {}) {
+  const hydrateSession = useCallback(async ({ allowRefresh = true } = {}) => {
     const liveSession = await fetchAuthSession();
     if (!liveSession.is_authenticated && liveSession.has_refresh_session && allowRefresh) {
       try {
@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
 
     setSession(liveSession);
     return liveSession;
-  }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -95,7 +95,7 @@ export function AuthProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [hydrateSession]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -125,9 +125,9 @@ export function AuthProvider({ children }) {
     }
 
     clearAuthParams(navigate, location);
-  }, [location, navigate]);
+  }, [hydrateSession, location, navigate]);
 
-  async function handleLogin(payload) {
+  const handleLogin = useCallback(async (payload) => {
     setIsSubmitting(true);
     setAuthError('');
 
@@ -137,31 +137,54 @@ export function AuthProvider({ children }) {
       setIsAuthModalOpen(false);
       return liveSession;
     } catch (error) {
+      if (error?.payload?.code === 'email_verification_required') {
+        const email = error?.payload?.email || payload.email.trim();
+        setIsAuthModalOpen(false);
+        setAuthNotice({
+          tone: 'neutral',
+          message: error.message || 'Verify your email before signing in.',
+        });
+        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+        return null;
+      }
       setAuthError(error.message || 'Sign-in failed. Try again or use email/password.');
       throw error;
     } finally {
       setIsSubmitting(false);
     }
-  }
+  }, [navigate]);
 
-  async function handleRegister(payload) {
+  const handleRegister = useCallback(async (payload) => {
     setIsSubmitting(true);
     setAuthError('');
 
     try {
-      const liveSession = await registerAuth(payload);
-      setSession(liveSession);
+      const registration = await registerAuth(payload);
       setIsAuthModalOpen(false);
-      return liveSession;
+      setAuthNotice({
+        tone: 'success',
+        message: registration.message || 'Check your inbox to verify your email.',
+      });
+      navigate(`/verify-email?email=${encodeURIComponent(registration.email || payload.email.trim())}`);
+      return registration;
     } catch (error) {
+      if (error?.payload?.code === 'verification_delivery_failed' && error?.payload?.email) {
+        setIsAuthModalOpen(false);
+        setAuthNotice({
+          tone: 'error',
+          message: error.message || 'We could not send your verification email yet.',
+        });
+        navigate(`/verify-email?email=${encodeURIComponent(error.payload.email)}`);
+        return null;
+      }
       setAuthError(error.message || 'Registration failed. Try again.');
       throw error;
     } finally {
       setIsSubmitting(false);
     }
-  }
+  }, [navigate]);
 
-  async function handleLogout() {
+  const handleLogout = useCallback(async () => {
     setIsSubmitting(true);
     try {
       await logoutAuth();
@@ -173,18 +196,18 @@ export function AuthProvider({ children }) {
     } finally {
       setIsSubmitting(false);
     }
-  }
+  }, []);
 
-  function openAuthModal(mode = 'login') {
+  const openAuthModal = useCallback((mode = 'login') => {
     setAuthMode(mode);
     setAuthError('');
     setIsAuthModalOpen(true);
-  }
+  }, []);
 
-  function closeAuthModal() {
+  const closeAuthModal = useCallback(() => {
     setAuthError('');
     setIsAuthModalOpen(false);
-  }
+  }, []);
 
   const beginGoogleAuth = useCallback(() => {
     setAuthError('');
@@ -217,9 +240,15 @@ export function AuthProvider({ children }) {
     authMode,
     authNotice,
     beginGoogleAuth,
+    closeAuthModal,
+    handleLogin,
+    handleLogout,
+    handleRegister,
+    hydrateSession,
     isAuthModalOpen,
     isBootstrapping,
     isSubmitting,
+    openAuthModal,
     session,
   ]);
 

@@ -19,7 +19,7 @@ The V1 stack is intentionally conservative:
 | Web framework | Django 6 | Boring, productive, mature auth/admin/model layer |
 | API layer | Django REST Framework 3.17 | Standard, explicit request/serializer/view patterns |
 | Database | PostgreSQL 16 | Strong relational fit for normalized facts, snapshots, and cache state |
-| Auth | Django auth + `django-allauth` + `djangorestframework-simplejwt` | Google-first auth with backend redirect/callback flow, email/password fallback, and secure cookie transport |
+| Auth | Django auth + `django-allauth` + `djangorestframework-simplejwt` | Google-first auth with backend redirect/callback flow, verified email/password fallback, secure cookie transport, and database-enforced unique emails |
 | Rate limiting | `django-ratelimit` with a database-backed cache | Lightweight burst backstop without introducing Redis in V1 |
 | AI client | `anthropic` + Gemini adapter via `requests` | Anthropic is the production-default provider, with the same backend seam supporting Gemini |
 | Quote source | `yfinance` | Good enough for cached supporting price context in V1 |

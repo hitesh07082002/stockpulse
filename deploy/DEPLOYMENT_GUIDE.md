@@ -184,6 +184,10 @@ EMAIL_HOST_PASSWORD=your-smtp-password
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
 PASSWORD_RESET_TIMEOUT=3600
+AUTH_REGISTER_RATE=5/h
+AUTH_LOGIN_RATE=10/m
+EMAIL_VERIFICATION_RESEND_RATE=5/h
+EMAIL_VERIFICATION_CONFIRM_RATE=15/h
 PASSWORD_RESET_REQUEST_RATE=5/h
 PASSWORD_RESET_CONFIRM_RATE=10/h
 AI_PROVIDER=anthropic
@@ -201,7 +205,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 Choose a strong POSTGRES_PASSWORD and use it in both `POSTGRES_PASSWORD` and `DATABASE_URL`.
 Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS`/`FRONTEND_APP_ORIGIN` are missing, an insecure email backend is configured, `DEFAULT_FROM_EMAIL` is blank, SMTP is selected without `EMAIL_HOST`, or mock Google OAuth is left enabled.
 
-Password reset in production depends on the SMTP settings above. After the first deploy, confirm that `/reset-password` can submit successfully and that the email provider delivers the reset email to a real inbox.
+Password reset and email verification in production both depend on the SMTP settings above. After the first deploy, confirm that `/verify-email` and `/reset-password` both work against a real inbox.
 
 Save and exit (Ctrl+X, Y, Enter in nano).
 

@@ -12,7 +12,7 @@ Stock research app for the S&P 500: canonical SEC financials, cached price conte
 - **DCF Calculator** — Earnings and cash flow valuations with editable assumptions
 - **AI Copilot** — Ask questions about any company with structured StockPulse data as the primary grounding source
 - **Screener** — Filter and sort 500 companies by PE, margins, growth, debt, and free cash flow
-- **Auth** — Google-first sign-in, email/password fallback, and secure password reset by email
+- **Auth** — Google sign-in, verified email/password auth, secure password reset, and backend-managed cookie sessions
 - **Responsive UI** — Mobile screener cards + filter sheet, responsive stock-detail tabs, and smoke coverage for critical phone-sized flows
 
 ## Tech Stack
@@ -28,7 +28,9 @@ make dev
 ```
 
 Local auth notes:
+- New email/password signups require email verification before the first sign-in.
 - Dev password-reset emails use the console backend by default, so reset links are printed in the backend terminal.
+- Dev verification emails use the same backend, so verification links are also printed in the backend terminal.
 - Production requires a real SMTP-backed `EMAIL_BACKEND`, a valid `FRONTEND_APP_ORIGIN`, and `ENABLE_GOOGLE_OAUTH_MOCK=False`.
 
 ## Django Admin
