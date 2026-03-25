@@ -66,7 +66,9 @@ function AuthModalCard({
             {authMode === 'register' ? 'Create your account' : 'Sign in to StockPulse'}
           </p>
           <p className="font-body text-sm text-text-secondary">
-            Browsing stays open. Google and email/password both unlock the full authenticated experience.
+            {authMode === 'register'
+              ? 'Create an account with Google or email to unlock the full StockPulse experience.'
+              : 'Keep browsing as a guest, or sign in with Google or email to continue.'}
           </p>
         </div>
         <button
@@ -214,13 +216,13 @@ function AuthModalCard({
         )}
 
         <div className="flex items-center justify-between gap-4 text-xs text-text-tertiary">
-          <span>Email and Google auth are both supported.</span>
+          <span>Google and email sign-in are both available.</span>
           <button
             type="button"
             onClick={() => openAuthModal(authMode === 'login' ? 'register' : 'login')}
             className="text-accent transition-colors hover:text-accent-hover"
           >
-            {authMode === 'login' ? 'Need an account?' : 'Already have an account?'}
+            {authMode === 'login' ? 'New to StockPulse?' : 'Already have an account?'}
           </button>
         </div>
       </div>
