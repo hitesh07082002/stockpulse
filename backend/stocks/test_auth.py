@@ -1,4 +1,5 @@
 import re
+from importlib import import_module
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -6,7 +7,7 @@ from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.core import mail
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import override_settings
 from rest_framework.test import APIClient
 
@@ -190,6 +191,60 @@ def test_user_email_is_case_insensitively_unique_in_database():
             username="oracle-user-duplicate",
             email="ORACLE@example.com",
             password="StockPulse456!",
+        )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_email_uniqueness_migration_repairs_existing_duplicate_accounts():
+    migration = import_module("stocks.migrations.0005_user_email_ci_unique")
+    canonical_user = _create_verified_user(
+        username="staff-owner",
+        email="owner@example.com",
+        password="StockPulse123!",
+    )
+    canonical_user.is_staff = True
+    canonical_user.is_superuser = True
+    canonical_user.save(update_fields=["is_staff", "is_superuser"])
+
+    with connection.schema_editor() as schema_editor:
+        migration.drop_case_insensitive_email_index(None, schema_editor)
+
+    duplicate_user = get_user_model().objects.create_user(
+        username="owner@example.com",
+        email="OWNER@example.com",
+        password="StockPulse456!",
+        is_active=True,
+    )
+    EmailAddress.objects.create(
+        user=duplicate_user,
+        email="owner@example.com",
+        verified=False,
+        primary=True,
+    )
+
+    with connection.schema_editor() as schema_editor:
+        migration.create_case_insensitive_email_index(None, schema_editor)
+
+    canonical_user.refresh_from_db()
+    duplicate_user.refresh_from_db()
+
+    assert canonical_user.email == "owner@example.com"
+    assert canonical_user.is_active is True
+    assert duplicate_user.email == ""
+    assert duplicate_user.is_active is False
+    assert (
+        EmailAddress.objects.filter(
+            user=duplicate_user,
+            email__iexact="owner@example.com",
+        ).exists()
+        is False
+    )
+
+    with pytest.raises(IntegrityError):
+        get_user_model().objects.create_user(
+            username="owner-duplicate-2",
+            email="OWNER@example.com",
+            password="StockPulse789!",
         )
 
 

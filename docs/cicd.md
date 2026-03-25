@@ -171,6 +171,7 @@ Use expand-contract migrations:
 Rules:
 - production migrations should run in the deploy pipeline, not manually from a laptop
 - destructive schema changes require explicit rollback planning
+- `stocks.0005_user_email_ci_unique` now self-heals legacy duplicate `auth_user.email` rows during deploy by keeping the strongest matching account, blanking the duplicate email, deactivating the extra user, and then adding the case-insensitive unique index
 
 ## 4.5 Post-Deploy Verification
 
