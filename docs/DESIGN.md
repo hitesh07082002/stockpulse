@@ -236,7 +236,7 @@
 - One-line product subline beneath: "Financials, valuations, and AI analysis for every S&P 500 company" in DM Sans text-lg, text-text-secondary.
 - Search sits below and owns the page. Do not add content above the brand heading.
 - Quick ticker pills are elevated interactive buttons (bg-elevated, border, rounded-full, hover:border-accent), not text links.
-- Data proof strip: "500 companies · 30yr SEC filings · Updated daily" in JetBrains Mono text-sm text-text-tertiary.
+- Data proof strip: "500 companies · 30yr SEC filings · Prices refresh every 15 min" in JetBrains Mono text-sm text-text-tertiary.
 - Live data strip: horizontal row of top-5 companies by market cap, each showing ticker, price, and day change in monospace. Fetched from /api/screener/. If API unavailable, strip does not render.
 - Navigation links to screener and about page at bottom.
 - No marketing hero, no 3-column feature grid, no gradient backgrounds.
