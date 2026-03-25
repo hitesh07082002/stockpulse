@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -8,13 +7,19 @@ from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.mail import EmailMultiAlternatives
 from django.core import signing
+from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.text import slugify
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
 GOOGLE_STATE_SALT = "stocks.auth.google"
+PASSWORD_RESET_TOKEN_GENERATOR = PasswordResetTokenGenerator()
 
 
 class GoogleOAuthError(Exception):
@@ -162,7 +167,8 @@ def sanitize_next_path(next_path: str | None) -> str:
 
 def sanitize_frontend_origin(origin: str | None) -> str:
     allowed = [value for value in settings.CORS_ALLOWED_ORIGINS if value]
-    default_origin = allowed[0] if allowed else "http://localhost:5173"
+    configured_origin = getattr(settings, "FRONTEND_APP_ORIGIN", "").strip()
+    default_origin = configured_origin or (allowed[0] if allowed else "http://localhost:5173")
     if not origin:
         return default_origin
 
@@ -224,6 +230,12 @@ def build_frontend_redirect(origin: str, next_path: str, status: str | None = No
             target.fragment,
         )
     )
+
+
+def build_frontend_absolute_url(path: str, params: dict | None = None, *, origin: str | None = None) -> str:
+    target = urlsplit(f"{sanitize_frontend_origin(origin)}{sanitize_next_path(path)}")
+    search = urlencode(params or {})
+    return urlunsplit((target.scheme, target.netloc, target.path, search, target.fragment))
 
 
 def build_google_authorization_url(request, *, next_path: str, origin: str) -> str:
@@ -364,3 +376,62 @@ def link_or_create_google_user(profile: dict):
         defaults={"verified": True, "primary": True},
     )
     return user, created
+
+
+def find_password_reset_user(email: str):
+    User = get_user_model()
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return None
+    return User.objects.filter(email__iexact=normalized_email, is_active=True).first()
+
+
+def build_password_reset_link(user) -> str:
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = PASSWORD_RESET_TOKEN_GENERATOR.make_token(user)
+    return build_frontend_absolute_url(
+        "/reset-password",
+        {"uid": uid, "token": token},
+    )
+
+
+def send_password_reset_email(user):
+    reset_link = build_password_reset_link(user)
+    context = {
+        "user": user,
+        "reset_link": reset_link,
+        "expiry_minutes": max(1, int(settings.PASSWORD_RESET_TIMEOUT / 60)),
+        "site_name": "StockPulse",
+    }
+    subject = render_to_string("stocks/emails/password_reset_subject.txt", context).strip()
+    text_body = render_to_string("stocks/emails/password_reset_email.txt", context)
+    html_body = render_to_string("stocks/emails/password_reset_email.html", context)
+
+    message = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+    )
+    message.attach_alternative(html_body, "text/html")
+    message.send(fail_silently=False)
+
+
+def resolve_password_reset_user(uid: str, token: str):
+    User = get_user_model()
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id, is_active=True)
+    except Exception:
+        return None
+
+    if not PASSWORD_RESET_TOKEN_GENERATOR.check_token(user, token):
+        return None
+
+    return user
+
+
+def update_user_password(user, password: str):
+    user.set_password(password)
+    user.save(update_fields=["password"])
+    return user

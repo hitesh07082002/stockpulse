@@ -213,3 +213,40 @@ test('google sign-in completes through the local mock consent flow', async ({ pa
   await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
   await expect(page.getByText(/demo user/i)).toBeVisible();
 });
+
+test('password reset request and confirm routes support account recovery', async ({ page }) => {
+  await page.route('**/api/auth/password-reset/request/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'If an account exists for that email, we sent a reset link.',
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/password-reset/confirm/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Password updated. Sign in with your new password.',
+      }),
+    });
+  });
+
+  await page.goto('/reset-password');
+  await page.getByLabel('Email').fill('oracle@example.com');
+  await page.getByRole('button', { name: /send reset link/i }).click();
+  await expect(page.getByRole('heading', { name: /check your inbox/i })).toBeVisible();
+
+  await page.goto('/reset-password?uid=test-uid&token=test-token');
+  await page.getByLabel('New password').fill('NewStockPulse123!');
+  await page.getByLabel('Confirm password').fill('NewStockPulse123!');
+  await page.getByRole('button', { name: /update password/i }).click();
+  await expect(page.getByRole('heading', { name: /you can sign in now/i })).toBeVisible();
+});

@@ -1,10 +1,14 @@
+import logging
+
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.http import HttpResponse, HttpResponseRedirect
 from django.middleware.csrf import get_token
 from django.utils.html import escape
+from django_ratelimit.core import is_ratelimited
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
@@ -20,14 +24,21 @@ from .auth_services import (
     clear_auth_cookies,
     create_password_user,
     exchange_google_code_for_tokens,
+    find_password_reset_user,
     fetch_google_profile,
     google_oauth_is_configured,
     issue_refresh_token,
     link_or_create_google_user,
     read_google_state,
+    resolve_password_reset_user,
+    send_password_reset_email,
     set_auth_cookies,
+    update_user_password,
 )
 from .authentication import CookieJWTAuthentication
+
+logger = logging.getLogger(__name__)
+PASSWORD_RESET_REQUEST_MESSAGE = "If an account exists for that email, we sent a reset link."
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -52,6 +63,23 @@ class RegisterSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(max_length=128, trim_whitespace=False)
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False)
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
 
 
 def _session_payload(user=None, *, has_refresh_session=False):
@@ -81,6 +109,17 @@ def _response_with_auth(request, user, *, http_status=status.HTTP_200_OK):
         status=http_status,
     )
     return set_auth_cookies(response, refresh_token)
+
+
+def _is_auth_rate_limited(request, *, group: str, rate: str) -> bool:
+    return is_ratelimited(
+        request=request,
+        group=group,
+        key="ip",
+        rate=rate,
+        method=["POST"],
+        increment=True,
+    )
 
 
 @api_view(["GET"])
@@ -150,7 +189,7 @@ def refresh_view(request):
     try:
         refresh_token = RefreshToken(raw_token)
         user = CookieJWTAuthentication().get_user(refresh_token)
-    except TokenError:
+    except (TokenError, AuthenticationFailed):
         response = Response(
             {"error": "Refresh session expired. Sign in again."},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -168,6 +207,64 @@ def logout_view(request):
     get_token(request)
     response = Response({"ok": True})
     return clear_auth_cookies(response)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def password_reset_request_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.password_reset.request",
+        rate=settings.PASSWORD_RESET_REQUEST_RATE,
+    ):
+        return Response(
+            {"error": "Too many reset attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = find_password_reset_user(serializer.validated_data["email"])
+    if user:
+        try:
+            send_password_reset_email(user)
+        except Exception:
+            logger.exception("Password reset email failed for user_id=%s", user.id)
+
+    return Response({"message": PASSWORD_RESET_REQUEST_MESSAGE})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def password_reset_confirm_view(request):
+    if _is_auth_rate_limited(
+        request,
+        group="auth.password_reset.confirm",
+        rate=settings.PASSWORD_RESET_CONFIRM_RATE,
+    ):
+        return Response(
+            {"error": "Too many reset attempts. Try again soon."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = resolve_password_reset_user(
+        serializer.validated_data["uid"],
+        serializer.validated_data["token"],
+    )
+    if not user:
+        return Response(
+            {"error": "This reset link is invalid or has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    update_user_password(user, serializer.validated_data["password"])
+    return Response({"message": "Password updated. Sign in with your new password."})
 
 
 @api_view(["GET"])

@@ -121,6 +121,10 @@ CORS_ALLOWED_ORIGINS = split_csv_env(
     '' if IS_PRODUCTION else 'http://localhost:5173,http://127.0.0.1:5173',
 )
 CORS_ALLOW_CREDENTIALS = True
+FRONTEND_APP_ORIGIN = (
+    os.getenv('FRONTEND_APP_ORIGIN', '').strip()
+    or (CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else ('https://stockpulse.hiteshsadhwani.xyz' if IS_PRODUCTION else 'http://localhost:5173'))
+)
 
 # CSRF
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
@@ -139,6 +143,7 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'CHECK_REVOKE_TOKEN': True,
     'AUTH_COOKIE': 'access_token',
     'REFRESH_COOKIE': 'refresh_token',
     'AUTH_COOKIE_HTTP_ONLY': True,
@@ -182,6 +187,26 @@ ENABLE_GOOGLE_OAUTH_MOCK = parse_bool_env(
     default=(DEBUG and not IS_PRODUCTION),
 )
 
+# Email / password reset
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend'
+    if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend',
+).strip()
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@stockpulse.dev').strip()
+SERVER_EMAIL = os.getenv('SERVER_EMAIL', DEFAULT_FROM_EMAIL).strip()
+EMAIL_HOST = os.getenv('EMAIL_HOST', '').strip()
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = parse_bool_env(os.getenv('EMAIL_USE_TLS'), default=not DEBUG)
+EMAIL_USE_SSL = parse_bool_env(os.getenv('EMAIL_USE_SSL'), default=False)
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '15'))
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
+PASSWORD_RESET_REQUEST_RATE = os.getenv('PASSWORD_RESET_REQUEST_RATE', '5/h').strip()
+PASSWORD_RESET_CONFIRM_RATE = os.getenv('PASSWORD_RESET_CONFIRM_RATE', '10/h').strip()
+
 # AI providers
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 _default_ai_provider = 'gemini' if DEBUG and GEMINI_API_KEY and not os.getenv('AI_PROVIDER') else 'anthropic'
@@ -219,5 +244,11 @@ validate_runtime_configuration(
     database_url=database_url,
     allowed_hosts=ALLOWED_HOSTS,
     cors_allowed_origins=CORS_ALLOWED_ORIGINS,
+    frontend_app_origin=FRONTEND_APP_ORIGIN,
+    email_backend=EMAIL_BACKEND,
+    default_from_email=DEFAULT_FROM_EMAIL,
+    email_host=EMAIL_HOST,
+    email_use_tls=EMAIL_USE_TLS,
+    email_use_ssl=EMAIL_USE_SSL,
     enable_google_oauth_mock=ENABLE_GOOGLE_OAUTH_MOCK,
 )

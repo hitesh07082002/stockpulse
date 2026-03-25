@@ -19,6 +19,12 @@ def validate_runtime_configuration(
     database_url,
     allowed_hosts,
     cors_allowed_origins,
+    frontend_app_origin,
+    email_backend,
+    default_from_email,
+    email_host,
+    email_use_tls,
+    email_use_ssl,
     enable_google_oauth_mock,
 ):
     errors = []
@@ -42,6 +48,27 @@ def validate_runtime_configuration(
 
     if not cors_allowed_origins:
         errors.append("CORS_ALLOWED_ORIGINS must list the production frontend origin.")
+
+    if not frontend_app_origin:
+        errors.append("FRONTEND_APP_ORIGIN must point at the production frontend.")
+
+    insecure_email_backends = {
+        "django.core.mail.backends.console.EmailBackend",
+        "django.core.mail.backends.locmem.EmailBackend",
+        "django.core.mail.backends.dummy.EmailBackend",
+        "",
+    }
+    if email_backend in insecure_email_backends:
+        errors.append("EMAIL_BACKEND must deliver real mail in production.")
+
+    if not default_from_email:
+        errors.append("DEFAULT_FROM_EMAIL must be set in production.")
+
+    if email_backend == "django.core.mail.backends.smtp.EmailBackend" and not email_host:
+        errors.append("EMAIL_HOST is required when SMTP email is used in production.")
+
+    if email_use_tls and email_use_ssl:
+        errors.append("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be True.")
 
     if enable_google_oauth_mock:
         errors.append("ENABLE_GOOGLE_OAUTH_MOCK must be False in production.")

@@ -146,9 +146,14 @@ There is no separate staging environment in the current V1 deployment contract.
 Environment secrets now required for M6+:
 - `SECRET_KEY`
 - `DATABASE_URL`
+- `FRONTEND_APP_ORIGIN`
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI`
+- `EMAIL_BACKEND`
+- `DEFAULT_FROM_EMAIL`
+- `EMAIL_HOST` when SMTP is used
+- `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` when the provider requires auth
 - `AI_PROVIDER`
 - `ANTHROPIC_API_KEY` for the production-default provider, or `GEMINI_API_KEY` for local/dev/staging where Gemini is used
 - `ANTHROPIC_MODEL` or `GEMINI_MODEL` if overriding defaults
@@ -169,7 +174,7 @@ Rules:
 
 Every production deploy should run:
 - health check against the backend
-- manual smoke for landing, stock detail, auth presence, and AI streaming after the server is live
+- manual smoke for landing, stock detail, auth presence, password-reset request, and AI streaming after the server is live
 
 For gstack, the most useful deployment-adjacent skills later are:
 - `setup-deploy`
