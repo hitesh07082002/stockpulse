@@ -194,12 +194,14 @@ Purpose:
 
 Includes:
 - Google sign-in as the primary auth path through a backend-managed redirect/callback flow
-- email/password fallback
+- email/password fallback with email verification required before first login
 - email-based password reset and recovery
+- case-insensitive unique email enforcement at the database boundary
 - secure cookie-based auth
 - password changes invalidating pre-reset JWT cookie sessions immediately
 - frontend auth context bootstrapped through `/api/auth/session/`, including a refresh-session hint so fully anonymous browsing does not spam failed refresh attempts
 - login/register modal or drawer
+- verification resend + confirm flows on the frontend
 - shell-level sign-in entry points in the global header and AI tab
 
 Does not include:

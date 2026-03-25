@@ -422,6 +422,7 @@ Authentication is part of V1, but it stays narrow and boring.
 - 6.4.7 DONE `GET /api/auth/session/` exposes whether a refresh cookie is present so the frontend only attempts silent refresh when a real refresh session exists
 - 6.4.8 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
 - 6.4.9 DONE Account linking policy: if a Google sign-in email matches an existing email/password account, the social account is auto-linked to the existing user via `django-allauth` email authentication. No duplicate accounts are created for the same verified email.
+- 6.4.10 DONE Email/password accounts require email verification before the first successful login, and user emails are enforced case-insensitively unique at the database layer.
 
 ---
 
@@ -435,6 +436,12 @@ POST /api/auth/register/
 
 POST /api/auth/login/
      { email, password }
+
+POST /api/auth/email-verification/resend/
+     { email }
+
+POST /api/auth/email-verification/confirm/
+     { uid, token }
 
 GET  /api/auth/session/
 

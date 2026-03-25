@@ -1,0 +1,10 @@
+Hi{% if user.first_name %} {{ user.first_name }}{% endif %},
+
+Verify your email to finish creating your StockPulse account.
+
+Open this link:
+{{ verification_link }}
+
+This link expires in {{ expiry_minutes }} minutes.
+
+If you did not sign up for StockPulse, you can ignore this email.

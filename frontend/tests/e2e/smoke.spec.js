@@ -163,7 +163,7 @@ test('invalid ticker renders the search-facing not-found state', async ({ page }
   await expect(page.getByRole('link', { name: /back to search/i })).toBeVisible();
 });
 
-test('auth modal supports register, login, and logout', async ({ page }) => {
+test('auth modal routes new email signups into verification', async ({ page }) => {
   const email = `oracle+${Date.now()}@example.com`;
   const password = 'StockPulse123!';
 
@@ -179,20 +179,10 @@ test('auth modal supports register, login, and logout', async ({ page }) => {
   await page.getByLabel('Password').fill(password);
   await page.locator('form').getByRole('button', { name: /^create account$/i }).click();
 
-  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
-  await expect(page.getByText(/oracle user/i)).toBeVisible();
-
-  await page.getByRole('button', { name: /sign out/i }).click();
-  await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible();
-
-  await page.getByRole('button', { name: /^sign in$/i }).click();
-  await page.getByRole('button', { name: /use email instead/i }).click();
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: /sign in with email/i }).click();
-
-  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
-  await expect(page.getByText(/50 ai prompts\/day/i)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/verify-email\\?email=${encodeURIComponent(email)}`));
+  await expect(page.getByRole('heading', { name: /verify your email/i })).toBeVisible();
+  await expect(page.getByText(new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))).toBeVisible();
+  await expect(page.getByRole('button', { name: /resend verification email/i })).toBeVisible();
 });
 
 test('google sign-in completes through the local mock consent flow', async ({ page }) => {
@@ -249,4 +239,22 @@ test('password reset request and confirm routes support account recovery', async
   await page.getByLabel('Confirm password').fill('NewStockPulse123!');
   await page.getByRole('button', { name: /update password/i }).click();
   await expect(page.getByRole('heading', { name: /you can sign in now/i })).toBeVisible();
+});
+
+test('email verification confirm route supports account activation', async ({ page }) => {
+  await page.route('**/api/auth/email-verification/confirm/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Email verified. You can sign in now.',
+      }),
+    });
+  });
+
+  await page.goto('/verify-email?uid=test-uid&token=test-token');
+  await expect(page.getByRole('heading', { name: /your account is ready/i })).toBeVisible();
+  await expect(page.getByText(/your email has been verified successfully/i)).toBeVisible();
 });

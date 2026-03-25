@@ -9,6 +9,7 @@ from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.db import IntegrityError, transaction
 from django.core.mail import EmailMultiAlternatives
 from django.core import signing
 from django.template.loader import render_to_string
@@ -21,6 +22,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 GOOGLE_STATE_SALT = "stocks.auth.google"
 PASSWORD_RESET_TOKEN_GENERATOR = PasswordResetTokenGenerator()
+EMAIL_VERIFICATION_TOKEN_GENERATOR = PasswordResetTokenGenerator()
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,10 @@ class GoogleOAuthError(Exception):
 
 
 class AmbiguousEmailError(Exception):
+    pass
+
+
+class EmailConflictError(Exception):
     pass
 
 
@@ -57,6 +63,46 @@ def _clean_name_parts(name: str) -> tuple[str, str]:
     return words[0], " ".join(words[1:])
 
 
+def _normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def sync_email_address(user, email: str | None = None, *, verified: bool = False):
+    normalized_email = _normalize_email(email or getattr(user, "email", ""))
+    if not normalized_email:
+        return None
+
+    email_address, _ = EmailAddress.objects.get_or_create(
+        user=user,
+        email=normalized_email,
+        defaults={"verified": verified, "primary": True},
+    )
+
+    dirty_fields = []
+    if verified and not email_address.verified:
+        email_address.verified = True
+        dirty_fields.append("verified")
+    if not email_address.primary:
+        email_address.primary = True
+        dirty_fields.append("primary")
+    if dirty_fields:
+        email_address.save(update_fields=dirty_fields)
+
+    EmailAddress.objects.filter(user=user).exclude(pk=email_address.pk).update(primary=False)
+    return email_address
+
+
+def is_email_verified(user) -> bool:
+    if not user or not getattr(user, "email", ""):
+        return False
+
+    return EmailAddress.objects.filter(
+        user=user,
+        email__iexact=user.email,
+        verified=True,
+    ).exists()
+
+
 def build_user_payload(user) -> dict:
     providers = list(
         SocialAccount.objects.filter(user=user).values_list("provider", flat=True)
@@ -69,6 +115,7 @@ def build_user_payload(user) -> dict:
     return {
         "id": user.id,
         "email": user.email,
+        "email_verified": is_email_verified(user),
         "name": display_name,
         "providers": sorted(set(providers)),
     }
@@ -87,26 +134,26 @@ def _build_unique_username(email: str) -> str:
 
 def create_password_user(email: str, password: str, name: str = ""):
     User = get_user_model()
-    normalized_email = (email or "").strip().lower()
+    normalized_email = _normalize_email(email)
     first_name, last_name = _clean_name_parts(name)
-    user = User.objects.create_user(
-        username=_build_unique_username(normalized_email),
-        email=normalized_email,
-        password=password,
-        first_name=first_name,
-        last_name=last_name,
-    )
-    EmailAddress.objects.update_or_create(
-        user=user,
-        email=normalized_email,
-        defaults={"verified": True, "primary": True},
-    )
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=_build_unique_username(normalized_email),
+                email=normalized_email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+            )
+            sync_email_address(user, normalized_email, verified=False)
+    except IntegrityError as exc:
+        raise EmailConflictError(normalized_email) from exc
     return user
 
 
-def _get_unique_user_by_email(email: str, *, active_only: bool = False):
+def get_user_by_email(email: str, *, active_only: bool = False):
     User = get_user_model()
-    normalized_email = (email or "").strip().lower()
+    normalized_email = _normalize_email(email)
     if not normalized_email:
         return None
 
@@ -123,7 +170,7 @@ def _get_unique_user_by_email(email: str, *, active_only: bool = False):
 
 def authenticate_password_user(email: str, password: str):
     try:
-        user = _get_unique_user_by_email(email)
+        user = get_user_by_email(email)
     except AmbiguousEmailError as exc:
         logger.error("Duplicate email accounts detected for login email=%s", exc)
         return None
@@ -357,17 +404,15 @@ def link_or_create_google_user(profile: dict):
     )
     if existing_social:
         user = existing_social.user
+        if not user.is_active:
+            raise GoogleOAuthError("This account is disabled. Contact the site owner.")
         existing_social.extra_data = profile
         existing_social.save(update_fields=["extra_data"])
-        EmailAddress.objects.update_or_create(
-            user=user,
-            email=email,
-            defaults={"verified": True, "primary": True},
-        )
+        sync_email_address(user, email, verified=True)
         return user, False
 
     try:
-        user = _get_unique_user_by_email(email)
+        user = get_user_by_email(email)
     except AmbiguousEmailError as exc:
         logger.error("Duplicate email accounts detected for google sign-in email=%s", exc)
         raise GoogleOAuthError(
@@ -377,16 +422,24 @@ def link_or_create_google_user(profile: dict):
     created = False
     if not user:
         first_name, last_name = _clean_name_parts(display_name)
-        user = User.objects.create(
-            username=_build_unique_username(email),
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-        )
-        user.set_unusable_password()
-        user.save(update_fields=["password"])
-        created = True
+        try:
+            with transaction.atomic():
+                user = User.objects.create(
+                    username=_build_unique_username(email),
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                created = True
+        except IntegrityError:
+            user = get_user_by_email(email)
+            if not user:
+                raise GoogleOAuthError("Google sign-in could not be completed. Try again.")
     else:
+        if not user.is_active:
+            raise GoogleOAuthError("This account is disabled. Contact the site owner.")
         first_name, last_name = _clean_name_parts(display_name)
         dirty_fields = []
         if not user.first_name and first_name:
@@ -403,23 +456,90 @@ def link_or_create_google_user(profile: dict):
         uid=uid,
         defaults={"user": user, "extra_data": profile},
     )
-    EmailAddress.objects.update_or_create(
-        user=user,
-        email=email,
-        defaults={"verified": True, "primary": True},
-    )
+    sync_email_address(user, email, verified=True)
     return user, created
 
 
 def find_password_reset_user(email: str):
-    normalized_email = (email or "").strip().lower()
+    normalized_email = _normalize_email(email)
     if not normalized_email:
         return None
     try:
-        return _get_unique_user_by_email(normalized_email, active_only=True)
+        user = get_user_by_email(normalized_email, active_only=True)
     except AmbiguousEmailError as exc:
         logger.error("Duplicate email accounts detected for password reset email=%s", exc)
         return None
+
+    if not user or not is_email_verified(user):
+        return None
+    return user
+
+
+def find_email_verification_user(email: str):
+    normalized_email = _normalize_email(email)
+    if not normalized_email:
+        return None
+    try:
+        user = get_user_by_email(normalized_email)
+    except AmbiguousEmailError as exc:
+        logger.error("Duplicate email accounts detected for verification resend email=%s", exc)
+        return None
+
+    if not user or not user.is_active or is_email_verified(user):
+        return None
+    return user
+
+
+def build_email_verification_link(user) -> str:
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = EMAIL_VERIFICATION_TOKEN_GENERATOR.make_token(user)
+    return build_frontend_absolute_url(
+        "/verify-email",
+        {"uid": uid, "token": token},
+    )
+
+
+def send_email_verification_email(user):
+    verification_link = build_email_verification_link(user)
+    context = {
+        "user": user,
+        "verification_link": verification_link,
+        "expiry_minutes": max(1, int(settings.PASSWORD_RESET_TIMEOUT / 60)),
+        "site_name": "StockPulse",
+    }
+    subject = render_to_string("stocks/emails/email_verification_subject.txt", context).strip()
+    text_body = render_to_string("stocks/emails/email_verification_email.txt", context)
+    html_body = render_to_string("stocks/emails/email_verification_email.html", context)
+
+    message = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+    )
+    message.attach_alternative(html_body, "text/html")
+    message.send(fail_silently=False)
+
+
+def resolve_email_verification_user(uid: str, token: str):
+    User = get_user_model()
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id)
+    except Exception:
+        return None
+
+    if not user.is_active:
+        return None
+    if not EMAIL_VERIFICATION_TOKEN_GENERATOR.check_token(user, token):
+        return None
+
+    return user
+
+
+def mark_user_email_verified(user):
+    sync_email_address(user, user.email, verified=True)
+    return user
 
 
 def build_password_reset_link(user) -> str:

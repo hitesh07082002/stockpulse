@@ -54,6 +54,7 @@ async function buildApiError(response) {
   error.status = response.status;
   error.statusText = response.statusText;
   error.payload = errorPayload;
+  error.code = errorPayload?.code ?? null;
 
   return error;
 }
@@ -266,6 +267,14 @@ export async function registerAuth(payload) {
 
 export async function loginAuth(payload) {
   return post('/auth/login/', payload);
+}
+
+export async function resendEmailVerification(payload) {
+  return post('/auth/email-verification/resend/', payload);
+}
+
+export async function confirmEmailVerification(payload) {
+  return post('/auth/email-verification/confirm/', payload);
 }
 
 export async function requestPasswordReset(payload) {

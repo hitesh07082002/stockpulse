@@ -174,7 +174,7 @@ Rules:
 
 Every production deploy should run:
 - health check against the backend
-- manual smoke for landing, stock detail, auth presence, password-reset request, and AI streaming after the server is live
+- manual smoke for landing, stock detail, auth presence, email-verification delivery, password-reset request, and AI streaming after the server is live
 
 For gstack, the most useful deployment-adjacent skills later are:
 - `setup-deploy`
