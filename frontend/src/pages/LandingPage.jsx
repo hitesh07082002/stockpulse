@@ -326,7 +326,7 @@ export default function LandingPage() {
         </div>
 
         <p className="font-data text-sm text-text-tertiary">
-          500 companies · 30yr SEC filings · Updated daily
+          500 companies · 30yr SEC filings · Prices refresh every 15 min
         </p>
 
         {showLiveStrip && (

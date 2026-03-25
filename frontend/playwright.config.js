@@ -24,9 +24,18 @@ export default defineConfig({
   ],
   webServer: externalBaseURL
     ? undefined
-    : {
-        command: `npm run dev -- --host localhost --port ${PORT}`,
-        port: PORT,
-        reuseExistingServer: !process.env.CI,
-      },
+    : [
+        {
+          command: '../venv/bin/python ../backend/manage.py runserver 127.0.0.1:8000',
+          url: 'http://127.0.0.1:8000/api/health/',
+          reuseExistingServer: !process.env.CI,
+          timeout: 120 * 1000,
+        },
+        {
+          command: `npm run dev -- --host localhost --port ${PORT}`,
+          port: PORT,
+          reuseExistingServer: !process.env.CI,
+          timeout: 120 * 1000,
+        },
+      ],
 });
