@@ -95,7 +95,7 @@ The primary user journey is simple and fast:
 
 **Dimensions:**
 - 3.2.1 DONE Persistent company header with ticker, company name, sector, quote, and freshness badge.
-- 3.2.2 DONE Tabs: Overview, Financials, Price, Valuation, AI.
+- 3.2.2 DONE Tabs: Overview, Financials, Price, DCF Calculator, AI.
 - 3.2.3 DONE Every tab must render sensible loading, empty, stale, and error states.
 - 3.2.4 DONE The Valuation tab pre-fills core DCF assumptions from company data but keeps the major drivers editable.
 
@@ -637,6 +637,7 @@ Eng review (Mar 23, 2026) with Codex outside voice identified simplification and
 - 8.7.1 DONE Add host-cron execution for management commands
 - 8.7.2 DONE Add production settings, health checks, and deployment configuration
 - 8.7.3 IN_PROGRESS Complete accessibility, responsive, and performance polish
+- 8.7.3.1 DONE Stock-detail responsive hardening is implemented and recorded in `docs/done/v1/M8_001_RESPONSIVE_STOCK_DETAIL_HARDENING.md`
 - 8.7.4 DONE Update README and core docs with setup, architecture, verification, and deploy guidance
 - 8.7.5 DONE Add direct production deploy from `main`, automated migrations, health checks, and documented rollback steps
 - 8.7.6 IN_PROGRESS Required tests: operational timing verification for scheduled job SLAs, production deployment verification, and health check endpoint coverage
@@ -690,6 +691,7 @@ No milestone is complete without passing its verification gate. Gates are cumula
 - 9.6.1 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
 - 9.6.2 DONE Direct production deployment from `main` proves immutable artifact delivery, automated migration, and post-deploy health verification
 - 9.6.3 PENDING Protected-branch rules keep `main` merge-safe
+- 9.6.4 DONE Responsive hardening gate passes: mobile and tablet browser coverage verifies Price and DCF tabs without overflow, clipped controls, or broken chart hierarchy
 
 ---
 
