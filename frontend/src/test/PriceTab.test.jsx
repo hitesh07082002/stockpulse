@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PriceTab from '../components/tabs/PriceTab';
 
@@ -17,6 +17,8 @@ vi.mock('lightweight-charts', () => ({
         applyOptions: vi.fn(),
       }),
     }),
+    subscribeCrosshairMove: vi.fn(),
+    unsubscribeCrosshairMove: vi.fn(),
     timeScale: () => ({
       fitContent: vi.fn(),
     }),
@@ -63,5 +65,27 @@ describe('PriceTab', () => {
 
     expect(screen.getByText(/stale/i)).toBeInTheDocument();
     expect(screen.getByText(/adjusted close/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show volume/i })).toBeInTheDocument();
+    expect(screen.queryByText(/daily shares traded/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/price \$413\.42/i)).toBeInTheDocument();
+  });
+
+  it('reveals a clear volume summary only when the user enables it', () => {
+    usePricesMock.mockReturnValue({
+      data: {
+        data: [{ date: '2026-03-20', adjusted_close: 413.42, close: 415.67, volume: 22610000 }],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    });
+
+    render(<PriceTab ticker="MSFT" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /show volume/i }));
+
+    expect(screen.getByText(/daily shares traded/i)).toBeInTheDocument();
+    expect(screen.getByText(/volume 22\.61m shares/i)).toBeInTheDocument();
   });
 });
