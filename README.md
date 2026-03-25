@@ -7,7 +7,7 @@ Stock research app for the S&P 500: canonical SEC financials, cached price conte
 ## Features
 
 - **Search** — Instantly find any S&P 500 company by ticker or name
-- **Financials** — 30 years of annual and quarterly data from SEC 10-K/10-Q filings
+- **Financials** — 30 years of annual and quarterly SEC data with derived margins, free cash flow, and ROE
 - **Price Charts** — Adjusted close with 1M to MAX range selection
 - **DCF Calculator** — Earnings and cash flow valuations with editable assumptions
 - **AI Copilot** — Ask questions about any company with structured StockPulse data as the primary grounding source

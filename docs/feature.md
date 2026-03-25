@@ -67,6 +67,7 @@ Includes:
 - quote and day change
 - business context
 - fast scan cards driven by `MetricSnapshot`
+- overview metrics include margin, growth, free-cash-flow, and ROE context from the latest snapshot
 
 ### 4. Financials
 
@@ -75,6 +76,7 @@ Purpose:
 
 Includes:
 - normalized annual and quarterly financial series
+- derived margin, free-cash-flow, and ROE chart series when the raw SEC facts support them
 - strong default chart choices
 - trust-building tables below the visual story
 - metric switching without dashboard clutter
