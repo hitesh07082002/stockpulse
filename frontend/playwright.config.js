@@ -20,6 +20,22 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      grepInvert: /@responsive/,
+    },
+    {
+      name: 'tablet-chrome',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 834, height: 1194 },
+        hasTouch: true,
+        isMobile: false,
+      },
+      grep: /@responsive/,
+    },
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 7'] },
+      grep: /@responsive/,
     },
   ],
   webServer: externalBaseURL
