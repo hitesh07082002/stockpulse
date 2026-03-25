@@ -177,4 +177,42 @@ describe('AITab', () => {
     expect(screen.queryByText(/no response returned/i)).not.toBeInTheDocument();
     expect(screen.getByText(/49 left today/i)).toBeInTheDocument();
   });
+
+  it('offers continuation when the backend marks the answer as truncated', async () => {
+    setupAuth({ isAuthenticated: true, currentDaily: 50, authenticatedDaily: 50 });
+
+    sendChatMessageMock
+      .mockImplementationOnce(async function* () {
+        yield { type: 'text', content: 'First half. ' };
+        yield {
+          type: 'done',
+          remainingQuota: 49,
+          truncated: true,
+          canContinue: true,
+          autoContinued: true,
+        };
+      })
+      .mockImplementationOnce(async function* () {
+        yield { type: 'text', content: 'Second half.' };
+        yield {
+          type: 'done',
+          remainingQuota: 49,
+          truncated: false,
+          canContinue: false,
+        };
+      });
+
+    renderTab();
+    await submitPrompt('Explain the valuation');
+
+    await screen.findByText(/first half\./i);
+    const continueButton = await screen.findByRole('button', { name: /continue generating/i });
+    fireEvent.click(continueButton);
+
+    await screen.findByText(/first half\.\s*second half\./i);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /continue generating/i })).not.toBeInTheDocument();
+    });
+    expect(sendChatMessageMock).toHaveBeenCalledTimes(2);
+  });
 });
