@@ -8,6 +8,13 @@ import {
   YAxis,
 } from 'recharts';
 import { useValuationInputs } from '../../hooks/useStockData';
+import {
+  StockDetailChartStage,
+  StockDetailMetricCard,
+  StockDetailMetricGrid,
+  StockDetailSection,
+  StockDetailStatePanel,
+} from '../stock-detail/StockDetailPrimitives';
 
 const MODE_OPTIONS = [
   { key: 'earnings', label: 'Earnings' },
@@ -35,6 +42,11 @@ function formatPercent(value) {
 function formatPercentWithoutSign(value) {
   if (value == null || Number.isNaN(value)) return '—';
   return `${value.toFixed(2)}%`;
+}
+
+function formatUnsignedPercent(value) {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${Math.abs(value).toFixed(2)}%`;
 }
 
 function formatCompact(value) {
@@ -92,58 +104,78 @@ function ProjectionTooltip({ active, payload, metricLabel }) {
 }
 
 function ProjectionChart({ data, metricLabel }) {
-  const containerRef = useRef(null);
-  const [chartWidth, setChartWidth] = useState(640);
+  const hostRef = useRef(null);
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return undefined;
+    const host = hostRef.current;
+    if (!host) return undefined;
 
-    const updateWidth = () => {
-      const nextWidth = Math.max(element.clientWidth || 0, 320);
-      setChartWidth(nextWidth);
+    const updateSize = () => {
+      setChartSize({
+        width: host.clientWidth || 0,
+        height: host.clientHeight || 0,
+      });
     };
 
-    updateWidth();
+    updateSize();
 
-    if (typeof ResizeObserver !== 'function') {
-      return undefined;
+    let observer = null;
+    if (typeof ResizeObserver === 'function') {
+      observer = new ResizeObserver(() => updateSize());
+      observer.observe(host);
+    } else {
+      window.addEventListener('resize', updateSize);
     }
 
-    const observer = new ResizeObserver(() => updateWidth());
-    observer.observe(element);
-
-    return () => observer.disconnect();
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      } else {
+        window.removeEventListener('resize', updateSize);
+      }
+    };
   }, []);
 
   return (
-    <div ref={containerRef} className="h-[340px] w-full">
-      <LineChart data={data} width={chartWidth} height={340} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-        <XAxis
-          dataKey="label"
-          tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-          axisLine={false}
-          tickLine={false}
-        />
-        <YAxis
-          tickFormatter={(value) => `$${value.toFixed(0)}`}
-          tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-          axisLine={false}
-          tickLine={false}
-          width={72}
-        />
-        <Tooltip content={<ProjectionTooltip metricLabel={metricLabel} />} />
-        <Line
-          type="monotone"
-          dataKey="projectedPrice"
-          stroke="var(--color-accent)"
-          strokeWidth={2.5}
-          dot={{ r: 4, fill: 'var(--color-accent)' }}
-          activeDot={{ r: 6 }}
-        />
-      </LineChart>
-    </div>
+    <StockDetailChartStage preset="projection" className="border border-border bg-base/20">
+      <div ref={hostRef} className="h-full w-full">
+        {chartSize.width > 0 && chartSize.height > 0 ? (
+          <LineChart
+            width={chartSize.width}
+            height={chartSize.height}
+            data={data}
+            margin={{ top: 10, right: 24, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+              interval="preserveStartEnd"
+              minTickGap={24}
+            />
+            <YAxis
+              tickFormatter={(value) => `$${value.toFixed(0)}`}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+              width={72}
+            />
+            <Tooltip content={<ProjectionTooltip metricLabel={metricLabel} />} />
+            <Line
+              type="monotone"
+              dataKey="projectedPrice"
+              stroke="var(--color-accent)"
+              strokeWidth={2.5}
+              dot={{ r: 4, fill: 'var(--color-accent)' }}
+              activeDot={{ r: 6 }}
+            />
+          </LineChart>
+        ) : null}
+      </div>
+    </StockDetailChartStage>
   );
 }
 
@@ -159,22 +191,10 @@ function AssumptionField({ label, suffix, helper, value, onChange, step = '0.1' 
         value={value}
         step={step}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-border bg-elevated px-3 py-2 font-data text-base text-text-primary outline-none transition focus:border-accent"
+        className="min-h-11 w-full rounded-lg border border-border bg-elevated px-3 py-2 font-data text-base text-text-primary outline-none transition focus:border-accent"
       />
       {helper ? <span className="font-body text-xs text-text-tertiary">{helper}</span> : null}
     </label>
-  );
-}
-
-function StatePanel({ message, tone = 'default' }) {
-  const toneClass = tone === 'error'
-    ? 'border-error text-error'
-    : 'border-border text-text-secondary';
-
-  return (
-    <div className={`rounded-lg border bg-surface px-6 py-10 text-center ${toneClass}`}>
-      <p className="font-body text-base">{message}</p>
-    </div>
   );
 }
 
@@ -187,6 +207,27 @@ function WarningList({ warnings }) {
         <p key={warning} className="font-body text-sm text-[#F59E0B]">
           {warning}
         </p>
+      ))}
+    </div>
+  );
+}
+
+function ModeToggle({ modeKey, onChange }) {
+  return (
+    <div className="inline-flex flex-wrap gap-2 rounded-full border border-border bg-elevated p-1">
+      {MODE_OPTIONS.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => onChange(option.key)}
+          className={`min-h-11 rounded-full px-4 py-2 text-sm font-medium transition cursor-pointer ${
+            modeKey === option.key
+              ? 'bg-accent text-text-inverse'
+              : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+          }`}
+        >
+          {option.label}
+        </button>
       ))}
     </div>
   );
@@ -256,31 +297,75 @@ function ValuationTab({ ticker }) {
 
   if (isLoading) {
     return (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        <div className="h-[560px] rounded-2xl skeleton" />
-        <div className="h-[560px] rounded-2xl skeleton" />
+      <div className="flex flex-col gap-6">
+        <StockDetailSection bodyClassName="gap-4">
+          <div className="skeleton h-8 w-52 rounded" />
+          <div className="skeleton h-5 w-72 max-w-full rounded" />
+          <StockDetailMetricGrid className="xl:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div key={idx} className="flex flex-col gap-2">
+                <div className="skeleton h-3 w-28 rounded" />
+                <div className="skeleton h-9 w-36 rounded" />
+                <div className="skeleton h-3 w-24 rounded" />
+              </div>
+            ))}
+          </StockDetailMetricGrid>
+          <div className="skeleton h-16 w-full rounded-xl" />
+        </StockDetailSection>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+          <StockDetailSection bodyClassName="gap-4">
+            <div className="skeleton h-7 w-36 rounded" />
+            <div className="skeleton h-4 w-72 max-w-full rounded" />
+            <StockDetailMetricGrid className="xl:grid-cols-1">
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <div key={idx} className="flex flex-col gap-2">
+                  <div className="skeleton h-3 w-24 rounded" />
+                  <div className="skeleton h-8 w-28 rounded" />
+                </div>
+              ))}
+            </StockDetailMetricGrid>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="flex flex-col gap-2">
+                <div className="skeleton h-4 w-36 rounded" />
+                <div className="skeleton min-h-11 h-11 w-full rounded-lg" />
+                <div className="skeleton h-3 w-64 max-w-full rounded" />
+              </div>
+            ))}
+          </StockDetailSection>
+          <StockDetailSection bodyClassName="gap-4">
+            <div className="skeleton h-7 w-48 rounded" />
+            <div className="skeleton h-4 w-80 max-w-full rounded" />
+            <StockDetailChartStage preset="projection" className="bg-base/20">
+              <div className="h-full w-full skeleton" />
+            </StockDetailChartStage>
+          </StockDetailSection>
+        </div>
       </div>
     );
   }
 
   if (error) {
-    return <StatePanel tone="error" message="Valuation inputs unavailable" />;
+    return <StockDetailStatePanel tone="error" message="Valuation inputs unavailable" />;
   }
 
   if (data?.not_applicable) {
     return (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        <section className="rounded-2xl border border-border bg-surface p-6">
-          <h3 className="font-display text-2xl font-semibold text-text-primary">DCF Calculator</h3>
+      <div className="flex flex-col gap-6">
+        <StockDetailSection
+          title="DCF Calculator"
+          subtitle="Assumption-driven valuation workspace with guardrails for incomplete or rough-fit cases."
+        >
           <WarningList warnings={data?.warnings} />
-        </section>
-        <StatePanel message={data?.not_applicable_reason || 'Valuation unavailable for this company'} />
+        </StockDetailSection>
+        <StockDetailStatePanel
+          message={data?.not_applicable_reason || 'Valuation unavailable for this company'}
+        />
       </div>
     );
   }
 
   if (!modeData) {
-    return <StatePanel message="Insufficient data for valuation" />;
+    return <StockDetailStatePanel message="Insufficient data for valuation" />;
   }
 
   const currentTradingMultiple = toNumber(modeData.current_trading_multiple);
@@ -294,56 +379,52 @@ function ValuationTab({ ticker }) {
     : (modeData.availability_reason || 'Insufficient data for valuation');
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-      <section className="rounded-2xl border border-border bg-surface">
-        <div className="border-b border-border px-6 py-5">
-          <h3 className="font-display text-2xl font-semibold text-text-primary">Assumptions</h3>
-        </div>
+    <div className="flex flex-col gap-6">
+      <StockDetailSection
+        title="DCF Calculator"
+        subtitle="A compact, assumption-driven five-year valuation workspace."
+        actions={<ModeToggle modeKey={modeKey} onChange={setModeKey} />}
+      >
+        <StockDetailMetricGrid className="xl:grid-cols-3">
+          <StockDetailMetricCard
+            label="Implied Year 5 Price"
+            value={formatCurrency(futurePrice)}
+          />
+          <StockDetailMetricCard
+            label="Implied CAGR vs Today"
+            value={formatPercent(annualizedReturn)}
+            supporting={`Total ${projectionYears}-year return: ${formatPercent(totalReturn)}`}
+          />
+          <StockDetailMetricCard
+            label={`Entry Price For ${desiredReturnValue == null ? '—' : formatPercentWithoutSign(desiredReturnValue)} CAGR`}
+            value={formatCurrency(entryPrice)}
+            className="sm:col-span-2 xl:col-span-1"
+          />
+        </StockDetailMetricGrid>
 
-        <div className="flex flex-col gap-6 p-6">
-          <div className="flex gap-2">
-            {MODE_OPTIONS.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setModeKey(option.key)}
-                className={`rounded-lg border px-4 py-2 text-sm font-medium transition cursor-pointer ${
-                  modeKey === option.key
-                    ? 'border-accent bg-accent text-text-inverse'
-                    : 'border-border text-text-secondary hover:bg-elevated'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+        <WarningList warnings={visibleWarnings} />
+      </StockDetailSection>
 
-          <div className="grid gap-3 rounded-xl border border-border bg-elevated p-4 sm:grid-cols-3">
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                {currentMetricLabel}
-              </div>
-              <div className="font-data text-2xl text-text-primary">
-                {formatCompact(modeData.current_metric_value)}
-              </div>
-            </div>
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Current Multiple
-              </div>
-              <div className="font-data text-2xl text-text-primary">
-                {formatCompact(currentTradingMultiple)}
-              </div>
-            </div>
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Suggested Growth
-              </div>
-              <div className="font-data text-2xl text-text-primary">
-                {formatPercent(modeData.growth_rate_default).replace('+', '')}
-              </div>
-            </div>
-          </div>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)] xl:items-start">
+        <StockDetailSection
+          title="Assumptions"
+          subtitle="Use the current company data as a sober starting point, then adjust to match your thesis."
+        >
+          <StockDetailMetricGrid className="xl:grid-cols-1">
+            <StockDetailMetricCard
+              label={currentMetricLabel}
+              value={formatCompact(modeData.current_metric_value)}
+            />
+            <StockDetailMetricCard
+              label="Current Multiple"
+              value={formatCompact(currentTradingMultiple)}
+            />
+            <StockDetailMetricCard
+              label="Suggested Growth"
+              value={formatUnsignedPercent(modeData.growth_rate_default)}
+              className="sm:col-span-2 xl:col-span-1"
+            />
+          </StockDetailMetricGrid>
 
           {modeData.available ? (
             <div className="flex flex-col gap-5">
@@ -379,48 +460,19 @@ function ValuationTab({ ticker }) {
               {modeData.availability_reason || 'Insufficient data for valuation'}
             </div>
           )}
+        </StockDetailSection>
 
-          <WarningList warnings={visibleWarnings} />
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-border bg-surface">
-        <div className="border-b border-border px-6 py-5">
-          <h3 className="font-display text-2xl font-semibold text-text-primary">5-Year Projection</h3>
-        </div>
-
-        <div className="flex flex-col gap-6 p-6">
-          <div className="grid gap-3 rounded-xl border border-border bg-elevated p-4 md:grid-cols-3">
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Implied Year 5 Price
-              </div>
-              <div className="font-data text-2xl text-text-primary">{formatCurrency(futurePrice)}</div>
-            </div>
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Implied CAGR vs Today
-              </div>
-              <div className="font-data text-2xl text-text-primary">{formatPercent(annualizedReturn)}</div>
-              <div className="pt-1 font-body text-xs text-text-tertiary">
-                {`Total ${projectionYears}-year return: ${formatPercent(totalReturn)}`}
-              </div>
-            </div>
-            <div>
-              <div className="font-body text-xs uppercase tracking-wide text-text-tertiary">
-                Entry Price For {desiredReturnValue == null ? '—' : formatPercentWithoutSign(desiredReturnValue)} CAGR
-              </div>
-              <div className="font-data text-2xl text-text-primary">{formatCurrency(entryPrice)}</div>
-            </div>
-          </div>
-
+        <StockDetailSection
+          title="5-Year Projection"
+          subtitle={projectionMessage}
+        >
           {projectionData.length > 0 ? (
             <ProjectionChart data={projectionData} metricLabel={currentMetricLabel} />
           ) : (
-            <StatePanel message={projectionMessage} />
+            <StockDetailStatePanel message={projectionMessage} height="projection" />
           )}
-        </div>
-      </section>
+        </StockDetailSection>
+      </div>
     </div>
   );
 }

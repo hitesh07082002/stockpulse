@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { usePrices } from '../../hooks/useStockData';
+import {
+  StockDetailChartStage,
+  StockDetailSection,
+  StockDetailStatePanel,
+} from '../stock-detail/StockDetailPrimitives';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '5Y', 'MAX'];
 
@@ -14,6 +19,10 @@ const COLORS = {
   warningBg: 'rgba(245, 158, 11, 0.12)',
   warningText: '#F59E0B',
 };
+
+function joinClasses(...parts) {
+  return parts.filter(Boolean).join(' ');
+}
 
 function formatPriceLabel(value) {
   if (value == null || Number.isNaN(value)) return '—';
@@ -94,18 +103,25 @@ function formatFreshnessLabel(timestamp) {
 }
 
 function ChartSkeleton() {
-  return <div className="h-[500px] w-full rounded-lg skeleton" />;
+  return (
+    <StockDetailChartStage preset="price">
+      <div className="h-full w-full rounded-xl skeleton" />
+    </StockDetailChartStage>
+  );
 }
 
-function StatePanel({ message, tone = 'default' }) {
-  const toneClass = tone === 'error'
-    ? 'border-error text-error'
-    : 'border-border text-text-secondary';
-
+function ReadoutChip({ children, emphasis = false }) {
   return (
-    <div className={`flex h-[500px] items-center justify-center rounded-lg border bg-surface px-6 text-center ${toneClass}`}>
-      <p className="font-body text-base">{message}</p>
-    </div>
+    <span
+      className={joinClasses(
+        'rounded-full border px-3 py-1 text-xs',
+        emphasis
+          ? 'border-accent/40 bg-accent/10 text-text-primary'
+          : 'border-border bg-surface text-text-tertiary',
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -117,7 +133,7 @@ function PriceTab({ ticker }) {
     price: null,
     volume: null,
   });
-  const containerRef = useRef(null);
+  const chartHostRef = useRef(null);
   const chartRef = useRef(null);
   const priceSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
@@ -142,11 +158,12 @@ function PriceTab({ ticker }) {
   }, [latestPoint, showVolume]);
 
   useEffect(() => {
-    if (!containerRef.current || !hasPrices) return undefined;
+    const host = chartHostRef.current;
+    if (!host || !hasPrices) return undefined;
 
-    const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth || 300,
-      height: 500,
+    const chart = createChart(host, {
+      width: host.clientWidth || 300,
+      height: host.clientHeight || 280,
       layout: {
         background: { color: COLORS.bgTransparent },
         textColor: resolveTextColor(),
@@ -196,26 +213,36 @@ function PriceTab({ ticker }) {
     priceSeriesRef.current = priceSeries;
     volumeSeriesRef.current = volumeSeries;
 
+    const resize = () => {
+      chart.applyOptions({
+        width: host.clientWidth || 300,
+        height: host.clientHeight || 280,
+      });
+    };
+
+    resize();
+
+    let observer = null;
+    if (typeof ResizeObserver === 'function') {
+      observer = new ResizeObserver(() => resize());
+      observer.observe(host);
+    } else {
+      window.addEventListener('resize', resize);
+    }
+
     return () => {
+      if (observer) {
+        observer.disconnect();
+      } else {
+        window.removeEventListener('resize', resize);
+      }
+
       chart.remove();
       chartRef.current = null;
       priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [hasPrices, selectedRange, showVolume]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    const container = containerRef.current;
-    if (!chart || !container) return undefined;
-
-    const handleResize = () => {
-      chart.applyOptions({ width: container.clientWidth || 300 });
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [hasPrices]);
+  }, [hasPrices, showVolume]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -275,96 +302,99 @@ function PriceTab({ ticker }) {
   }, [hasPrices, latestPoint, showVolume]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {RANGES.map((range) => (
+    <StockDetailSection
+      title="Adjusted Close"
+      subtitle="Price history for the selected range, with optional daily volume context."
+      bodyClassName="gap-4"
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {RANGES.map((range) => (
+                <button
+                  key={range}
+                  type="button"
+                  aria-pressed={selectedRange === range}
+                  onClick={() => setSelectedRange(range)}
+                  className={`min-h-11 rounded-full border px-4 py-2 text-sm font-medium transition cursor-pointer ${
+                    selectedRange === range
+                      ? 'border-accent bg-accent text-text-inverse'
+                      : 'border-border text-text-secondary hover:bg-elevated'
+                  }`}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+
+            {hasPrices ? (
+              <div className="flex flex-wrap gap-2">
+                {chartReadout.dateLabel ? (
+                  <ReadoutChip>{chartReadout.dateLabel}</ReadoutChip>
+                ) : null}
+                <ReadoutChip emphasis>{`Price ${formatPriceLabel(chartReadout.price)}`}</ReadoutChip>
+                {showVolume && chartReadout.volume != null ? (
+                  <ReadoutChip>{`Volume ${formatVolumeLabel(chartReadout.volume)}`}</ReadoutChip>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
             <button
-              key={range}
               type="button"
-              aria-pressed={selectedRange === range}
-              onClick={() => setSelectedRange(range)}
-              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition cursor-pointer ${
-                selectedRange === range
+              aria-pressed={showVolume}
+              onClick={() => setShowVolume((current) => !current)}
+              className={`min-h-11 rounded-full border px-4 py-2 text-sm font-medium transition ${
+                showVolume
                   ? 'border-accent bg-accent text-text-inverse'
-                  : 'border-border text-text-secondary hover:bg-elevated'
+                  : 'border-border bg-surface text-text-secondary hover:border-border-hover hover:text-text-primary'
               }`}
             >
-              {range}
+              {showVolume ? 'Hide volume' : 'Show volume'}
             </button>
-          ))}
+            {showVolume ? (
+              <ReadoutChip>Daily shares traded</ReadoutChip>
+            ) : null}
+            {staleLabel ? (
+              <span
+                className="rounded-full px-3 py-1 text-xs font-medium"
+                style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
+              >
+                Stale · {staleLabel}
+              </span>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
-            Adjusted close
-          </span>
-          <button
-            type="button"
-            aria-pressed={showVolume}
-            onClick={() => setShowVolume((current) => !current)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-              showVolume
-                ? 'border-accent bg-accent text-text-inverse'
-                : 'border-border bg-surface text-text-tertiary hover:border-border-hover hover:text-text-primary'
-            }`}
-          >
-            {showVolume ? 'Hide volume' : 'Show volume'}
-          </button>
-          {showVolume ? (
-            <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
-              Daily shares traded
-            </span>
-          ) : null}
-          {staleLabel ? (
-            <span
-              className="rounded-full px-3 py-1 text-xs font-medium"
-              style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
-            >
-              Stale · {staleLabel}
-            </span>
-          ) : null}
-        </div>
+        {(isLoading || (isFetching && !hasPrices)) ? <ChartSkeleton /> : null}
+
+        {!isLoading && isError ? (
+          <StockDetailStatePanel
+            tone="error"
+            height="price"
+            message={error?.message || 'Price data unavailable. Retry.'}
+          />
+        ) : null}
+
+        {!isLoading && !isError && !hasPrices ? (
+          <StockDetailStatePanel
+            height="price"
+            message={data?.message || 'No price history available'}
+          />
+        ) : null}
+
+        {!isLoading && !isError && hasPrices ? (
+          <StockDetailChartStage preset="price" className="border border-border bg-base/20">
+            <div
+              ref={chartHostRef}
+              className="h-full w-full"
+            />
+          </StockDetailChartStage>
+        ) : null}
       </div>
-
-      {hasPrices ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
-          {chartReadout.dateLabel ? (
-            <span className="rounded-full border border-border bg-surface px-3 py-1">
-              {chartReadout.dateLabel}
-            </span>
-          ) : null}
-          <span className="rounded-full border border-border bg-surface px-3 py-1">
-            {`Price ${formatPriceLabel(chartReadout.price)}`}
-          </span>
-          {showVolume && chartReadout.volume != null ? (
-            <span className="rounded-full border border-border bg-surface px-3 py-1">
-              {`Volume ${formatVolumeLabel(chartReadout.volume)}`}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
-      {(isLoading || (isFetching && !hasPrices)) ? <ChartSkeleton /> : null}
-
-      {!isLoading && isError ? (
-        <StatePanel
-          tone="error"
-          message={error?.message || 'Price data unavailable. Retry.'}
-        />
-      ) : null}
-
-      {!isLoading && !isError && !hasPrices ? (
-        <StatePanel message={data?.message || 'No price history available'} />
-      ) : null}
-
-      {!isLoading && !isError && hasPrices ? (
-        <div
-          ref={containerRef}
-          className="h-[500px] w-full overflow-hidden rounded-lg"
-        />
-      ) : null}
-    </div>
+    </StockDetailSection>
   );
 }
 
