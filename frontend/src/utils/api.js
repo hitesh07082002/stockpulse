@@ -167,6 +167,10 @@ export function normalizeCopilotStreamEvent(payload) {
       ...payload,
       type: 'done',
       remainingQuota: extractRemainingQuota(payload),
+      truncated: Boolean(payload.truncated),
+      canContinue: Boolean(payload.can_continue ?? payload.canContinue),
+      autoContinued: Boolean(payload.auto_continued ?? payload.autoContinued),
+      continuationCount: parseNumericField(payload.continuation_count ?? payload.continuationCount),
     };
   }
 

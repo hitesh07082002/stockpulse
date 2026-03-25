@@ -10,7 +10,7 @@ Stock research app for the S&P 500: canonical SEC financials, cached price conte
 - **Financials** — 30 years of annual and quarterly SEC data with derived margins, free cash flow, and ROE
 - **Price Charts** — Adjusted close with 1M to MAX range selection
 - **DCF Calculator** — Earnings and cash flow valuations with editable assumptions
-- **AI Copilot** — Ask questions about any company with structured StockPulse data as the primary grounding source
+- **AI Copilot** — Ask questions about any company with structured StockPulse data as the primary grounding source, higher output limits, and graceful continuation when long answers hit the model cap
 - **Screener** — Filter and sort 500 companies by PE, margins, growth, debt, and free cash flow
 - **Auth** — Google sign-in, verified email/password auth, secure password reset, and backend-managed cookie sessions
 - **Responsive UI** — Mobile screener cards + filter sheet, responsive stock-detail tabs, and smoke coverage for critical phone-sized flows
