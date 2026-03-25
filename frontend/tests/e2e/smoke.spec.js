@@ -117,9 +117,57 @@ test('screener filters into a company detail flow', async ({ page }) => {
   await expect(page.getByText(ticker, { exact: true })).toBeVisible();
 });
 
-test.describe('mobile responsive flows', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+test.describe('@responsive stock-detail responsive flows', () => {
+  test('price tab keeps controls, readout, and chart usable without overflow', async ({ page }) => {
+    await page.goto('/stock/AAPL');
 
+    await page.getByRole('tab', { name: 'Price' }).click();
+    await expect(page.getByText(/adjusted close/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: '1Y' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /show volume/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /show volume/i }).click();
+    await expect(page.getByText(/daily shares traded/i)).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+
+  test('dcf tab keeps assumptions and projection readable without overflow', async ({ page }) => {
+    await page.goto('/stock/AAPL');
+
+    await page.getByRole('tab', { name: 'DCF Calculator' }).click();
+    await expect(page.getByRole('heading', { name: 'Assumptions' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '5-Year Projection' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /earnings/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /cash flow/i })).toBeVisible();
+    await expect(page.getByLabel(/growth rate/i)).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+
+  test('ai tab keeps the prompt composer usable without overflow', async ({ page }) => {
+    await page.goto('/stock/AAPL');
+
+    await page.getByRole('tab', { name: 'AI' }).click();
+    await expect(page.getByPlaceholder('Ask a question...')).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+});
+
+test.describe('@responsive mobile screener flow', () => {
   test('mobile screener uses the filter sheet and card results without overflow', async ({ page }) => {
     await page.goto('/screener');
 
@@ -133,20 +181,6 @@ test.describe('mobile responsive flows', () => {
 
     await expect(page.locator('table')).toHaveCount(0);
     await expect(page.getByText(/tap a company card to jump into the full detail view/i)).toBeVisible();
-
-    const layout = await page.evaluate(() => ({
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }));
-    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
-  });
-
-  test('mobile stock detail keeps tabs and copilot input usable without overflow', async ({ page }) => {
-    await page.goto('/stock/AAPL');
-
-    await expect(page.getByRole('tab', { name: 'Financials' })).toBeVisible();
-    await page.getByRole('tab', { name: 'AI' }).click();
-    await expect(page.getByPlaceholder('Ask a question...')).toBeVisible();
 
     const layout = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
