@@ -9,7 +9,7 @@ from django.core import mail
 from django.test import override_settings
 from rest_framework.test import APIClient
 
-from stocks.auth_services import link_or_create_google_user
+from stocks.auth_services import GoogleOAuthError, link_or_create_google_user
 
 
 @pytest.fixture
@@ -115,11 +115,37 @@ def test_login_rejects_invalid_password(api_client):
 
 
 @pytest.mark.django_db
+def test_login_rejects_ambiguous_duplicate_email_accounts(api_client):
+    User = get_user_model()
+    User.objects.create_user(
+        username="oracle-user-1",
+        email="oracle@example.com",
+        password="StockPulse123!",
+    )
+    User.objects.create_user(
+        username="oracle-user-2",
+        email="oracle@example.com",
+        password="StockPulse456!",
+    )
+
+    response = api_client.post(
+        "/api/auth/login/",
+        {"email": "oracle@example.com", "password": "StockPulse123!"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Invalid email or password."
+
+
+@pytest.mark.django_db
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
     FRONTEND_APP_ORIGIN="http://localhost:5173",
     PASSWORD_RESET_TIMEOUT=3600,
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
 )
 def test_password_reset_request_sends_email_for_existing_user(api_client):
     User = get_user_model()
@@ -148,6 +174,8 @@ def test_password_reset_request_sends_email_for_existing_user(api_client):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
     FRONTEND_APP_ORIGIN="http://localhost:5173",
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
 )
 def test_password_reset_request_is_generic_for_unknown_email(api_client):
     response = api_client.post(
@@ -166,7 +194,41 @@ def test_password_reset_request_is_generic_for_unknown_email(api_client):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
     FRONTEND_APP_ORIGIN="http://localhost:5173",
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
+)
+def test_password_reset_request_skips_ambiguous_duplicate_email_accounts(api_client):
+    User = get_user_model()
+    User.objects.create_user(
+        username="oracle-user-1",
+        email="oracle@example.com",
+        password="StockPulse123!",
+    )
+    User.objects.create_user(
+        username="oracle-user-2",
+        email="oracle@example.com",
+        password="StockPulse456!",
+    )
+
+    response = api_client.post(
+        "/api/auth/password-reset/request/",
+        {"email": "oracle@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "If an account exists for that email, we sent a reset link."
+    assert len(mail.outbox) == 0
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
+    FRONTEND_APP_ORIGIN="http://localhost:5173",
     PASSWORD_RESET_TIMEOUT=3600,
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
 )
 def test_password_reset_confirm_updates_password_and_allows_login(api_client):
     User = get_user_model()
@@ -221,6 +283,8 @@ def test_password_reset_confirm_updates_password_and_allows_login(api_client):
     DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
     FRONTEND_APP_ORIGIN="http://localhost:5173",
     PASSWORD_RESET_TIMEOUT=3600,
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
 )
 def test_password_reset_invalidates_existing_cookie_session(api_client):
     User = get_user_model()
@@ -277,6 +341,8 @@ def test_password_reset_invalidates_existing_cookie_session(api_client):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@stockpulse.dev",
     FRONTEND_APP_ORIGIN="http://localhost:5173",
+    PASSWORD_RESET_REQUEST_RATE="100/h",
+    PASSWORD_RESET_CONFIRM_RATE="100/h",
 )
 def test_password_reset_confirm_rejects_invalid_token(api_client):
     User = get_user_model()
@@ -454,3 +520,28 @@ def test_google_mock_consent_is_disabled_when_mock_auth_is_off(api_client):
     response = api_client.get("/api/auth/google/mock-consent/")
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_google_profile_rejects_ambiguous_duplicate_email_accounts():
+    User = get_user_model()
+    User.objects.create_user(
+        username="existing-user-1",
+        email="existing@example.com",
+        password="StockPulse123!",
+    )
+    User.objects.create_user(
+        username="existing-user-2",
+        email="existing@example.com",
+        password="StockPulse456!",
+    )
+
+    with pytest.raises(GoogleOAuthError, match="couldn't link that Google account automatically"):
+        link_or_create_google_user(
+            {
+                "sub": "google-existing-user",
+                "email": "existing@example.com",
+                "email_verified": True,
+                "name": "Existing User",
+            }
+        )

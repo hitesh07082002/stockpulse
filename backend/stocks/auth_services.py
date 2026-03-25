@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -20,9 +21,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 GOOGLE_STATE_SALT = "stocks.auth.google"
 PASSWORD_RESET_TOKEN_GENERATOR = PasswordResetTokenGenerator()
+logger = logging.getLogger(__name__)
 
 
 class GoogleOAuthError(Exception):
+    pass
+
+
+class AmbiguousEmailError(Exception):
     pass
 
 
@@ -98,10 +104,30 @@ def create_password_user(email: str, password: str, name: str = ""):
     return user
 
 
-def authenticate_password_user(email: str, password: str):
+def _get_unique_user_by_email(email: str, *, active_only: bool = False):
     User = get_user_model()
     normalized_email = (email or "").strip().lower()
-    user = User.objects.filter(email__iexact=normalized_email).first()
+    if not normalized_email:
+        return None
+
+    queryset = User.objects.filter(email__iexact=normalized_email)
+    if active_only:
+        queryset = queryset.filter(is_active=True)
+
+    matches = list(queryset.order_by("id")[:2])
+    if len(matches) > 1:
+        raise AmbiguousEmailError(normalized_email)
+
+    return matches[0] if matches else None
+
+
+def authenticate_password_user(email: str, password: str):
+    try:
+        user = _get_unique_user_by_email(email)
+    except AmbiguousEmailError as exc:
+        logger.error("Duplicate email accounts detected for login email=%s", exc)
+        return None
+
     if not user or not user.check_password(password):
         return None
     return user
@@ -340,7 +366,14 @@ def link_or_create_google_user(profile: dict):
         )
         return user, False
 
-    user = User.objects.filter(email__iexact=email).first()
+    try:
+        user = _get_unique_user_by_email(email)
+    except AmbiguousEmailError as exc:
+        logger.error("Duplicate email accounts detected for google sign-in email=%s", exc)
+        raise GoogleOAuthError(
+            "We couldn't link that Google account automatically. Contact the site owner."
+        ) from exc
+
     created = False
     if not user:
         first_name, last_name = _clean_name_parts(display_name)
@@ -379,11 +412,14 @@ def link_or_create_google_user(profile: dict):
 
 
 def find_password_reset_user(email: str):
-    User = get_user_model()
     normalized_email = (email or "").strip().lower()
     if not normalized_email:
         return None
-    return User.objects.filter(email__iexact=normalized_email, is_active=True).first()
+    try:
+        return _get_unique_user_by_email(normalized_email, active_only=True)
+    except AmbiguousEmailError as exc:
+        logger.error("Duplicate email accounts detected for password reset email=%s", exc)
+        return None
 
 
 def build_password_reset_link(user) -> str:
