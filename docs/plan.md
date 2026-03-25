@@ -1,12 +1,12 @@
-# StockPulse V1 — Scratch-Build Plan
+# StockPulse V1 — Delivery And Hardening Plan
 
 **Prototype:** v1.0.0
 **Date:** Mar 22, 2026
 **Status:** IN_PROGRESS
-**Priority:** P0 — Source-of-truth rewrite plan
+**Priority:** P0 — Source-of-truth delivery record and remaining hardening plan
 **Depends on:** [DESIGN.md](DESIGN.md)
 
-StockPulse V1 is a public-first stock analysis product for S&P 500 companies with optional user accounts. The rewrite should optimize for trust, speed, and clarity: search a company, inspect normalized financial history, check price and valuation context, and ask grounded AI questions. This document replaces the earlier incremental-cleanup plan with a scratch-build sequence.
+StockPulse V1 is a public-first stock analysis product for S&P 500 companies with optional user accounts. The product is now live; this document tracks the shipped architecture, milestone record, and the remaining hardening tasks that still matter.
 
 ---
 
@@ -14,17 +14,17 @@ StockPulse V1 is a public-first stock analysis product for S&P 500 companies wit
 
 **Status:** DONE
 
-These decisions are resolved and should not be reopened during the rebuild unless the product itself changes.
+These decisions are resolved and should not be reopened lightly unless the product itself changes.
 
 **Dimensions:**
 - 1.1 DONE V1 is public-first for browsing. Search, company pages, financials, price data, valuation, and screener remain accessible without login.
 - 1.2 DONE V1 includes authentication: Google sign-in as the primary path plus email/password fallback.
 - 1.3 DONE Launch coverage is the S&P 500. Development and early verification use a smaller seed dataset of 25 companies until normalization and caching are stable.
-- 1.4 DONE V1 background work runs as Django management commands on a single scheduled worker. Celery and Redis are not part of V1 unless one worker can no longer meet the V1 SLAs of quote refresh within 15 minutes and nightly data jobs within 60 minutes, with misses observed twice in normal operation, or durable user-triggered async jobs become a real product need.
+- 1.4 DONE V1 background work runs as Django management commands triggered by host cron against the app container. Celery and Redis are not part of V1 unless this single scheduled execution path can no longer meet the V1 SLAs of quote refresh within 15 minutes and nightly data jobs within 60 minutes, with misses observed twice in normal operation, or durable user-triggered async jobs become a real product need.
 - 1.5 DONE V1 uses the repo's current runtime baseline: Django 6 + Django REST Framework + PostgreSQL 16 on the backend, React 19 + React Router 7 + TanStack Query 5 + Tailwind 4 token layer on the frontend.
 - 1.5.1 DONE V1 keeps two charting tools on purpose: `Recharts` for Financials and DCF visuals, and `lightweight-charts` for the Price tab.
 - 1.6 DONE Dark mode is the canonical launch theme. Light mode is polish work and not a launch blocker.
-- 1.7 DONE Existing implementation details are reference material only. The rewrite does not preserve current component boundaries, endpoint names, or internal abstractions unless they still earn their keep.
+- 1.7 DONE The current implementation under `backend/` and `frontend/` is the source of truth. This document now records what shipped plus what still needs polish.
 
 ---
 
@@ -54,7 +54,7 @@ StockPulse V1 is a stock research tool, not a brokerage app, social feed, or por
 - 2.2.3 DONE Cached price chart and quote freshness signaling.
 - 2.2.4 DONE DCF valuation calculator modeled after Qualtrim's serious-but-approachable workflow, with sector warnings and missing-data guardrails.
 - 2.2.5 DONE Filterable screener using precomputed metrics and a focused V1 filter set.
-- 2.2.6 DONE Per-company AI copilot grounded only in structured StockPulse data.
+- 2.2.6 DONE Per-company AI copilot grounded primarily in structured StockPulse data, with limited general financial context used when it helps explain the numbers.
 
 ### 2.3 Explicitly Out of Scope for V1
 
@@ -111,7 +111,7 @@ The primary user journey is simple and fast:
 - 3.3.5 DONE After the anonymous quota is exhausted, the UI offers sign-in for the 50-prompt authenticated allowance that day.
 - 3.3.6 DONE Anonymous AI identity is issued as a signed `anon_ai_id` cookie on first copilot use, rotates every 30 days, and is reissued if missing or invalid. Anonymous daily quota enforcement is best-effort: clearing cookies resets the identity. The per-minute IP backstop limits abuse velocity but does not enforce a hard daily cap on anonymous users.
 - 3.3.7 DONE A short-window burst limit of 3 prompts per minute per IP applies alongside the daily quotas. This is enforced via middleware rate limiting (e.g. `django-ratelimit`), not via `AIUsageCounter`.
-- 3.3.8 DONE The shipped rewrite does not keep an in-app spend ledger; quota enforcement remains product behavior and provider credits remain the operational cost backstop.
+- 3.3.8 DONE The shipped product does not keep an in-app spend ledger; quota enforcement remains product behavior and provider credits remain the operational cost backstop.
 - 3.3.9 DONE Provider misconfiguration or exhaustion must surface as an honest unavailable state, not as a fake in-app budget message.
 
 ### 3.4 Authentication UX
@@ -154,7 +154,7 @@ The primary user journey is simple and fast:
 
 **Status:** DONE
 
-The rewrite keeps the schema compact and biased toward deterministic read performance.
+The shipped schema stays compact and biased toward deterministic read performance.
 
 ```text
 Company
@@ -231,7 +231,7 @@ AIUsageCounter
 - 4.4 DONE Authentication uses Django's built-in user model plus secure JWT cookie transport.
 - 4.5 DONE `AIUsageCounter` supports the V1 daily quotas of 10 anonymous prompts and 50 authenticated prompts without requiring Redis in V1.
 - 4.6 DONE AI cost safety is handled operationally through provider credit limits and model selection, not an in-app spend ledger.
-- 4.7 DONE There is no in-app daily AI budget table in the shipped rewrite; cost control is external to request handling.
+- 4.7 DONE There is no in-app daily AI budget table in the shipped product; cost control is external to request handling.
 - 4.8 DONE Raw SEC payloads are stored in a separate cold audit model, not on the hot `Company` row.
 - 4.9 DONE Raw SEC payload retention is bounded: keep the latest successful payload per `company + source` and the most recent failed payload for debugging.
 - 4.10 DONE AI quotas reset on the `America/New_York` calendar day.
@@ -242,7 +242,7 @@ AIUsageCounter
 
 **Status:** DONE
 
-This section is the heart of the rewrite. If these rules change, downstream charts, metrics, and AI answers change too.
+This section is the heart of the product data contract. If these rules change, downstream charts, metrics, and AI answers change too.
 
 ### 5.1 Metric Registry
 
@@ -379,7 +379,7 @@ Price data is cache-first with graceful stale fallback.
 
 **Status:** DONE
 
-The AI copilot only sees structured StockPulse data.
+The AI copilot is grounded primarily in structured StockPulse data, with limited general financial context allowed when it helps explain what the numbers mean.
 
 **Dimensions:**
 - 6.3.1 DONE Context includes company metadata, current cached quote, 10 annual periods, 8 recent quarters, and the latest `MetricSnapshot`
@@ -422,6 +422,7 @@ Authentication is part of V1, but it stays narrow and boring.
 - 6.4.7 DONE `GET /api/auth/session/` exposes whether a refresh cookie is present so the frontend only attempts silent refresh when a real refresh session exists
 - 6.4.8 DONE Google sign-in is treated as the primary V1 entry path, while email/password remains supported for fallback and recovery cases
 - 6.4.9 DONE Account linking policy: if a Google sign-in email matches an existing email/password account, the social account is auto-linked to the existing user via `django-allauth` email authentication. No duplicate accounts are created for the same verified email.
+- 6.4.10 DONE Email/password accounts require email verification before the first successful login, and user emails are enforced case-insensitively unique at the database layer.
 
 ---
 
@@ -435,6 +436,12 @@ POST /api/auth/register/
 
 POST /api/auth/login/
      { email, password }
+
+POST /api/auth/email-verification/resend/
+     { email }
+
+POST /api/auth/email-verification/confirm/
+     { uid, token }
 
 GET  /api/auth/session/
 
@@ -490,19 +497,19 @@ POST /api/companies/{ticker}/copilot/
 
 **Status:** IN_PROGRESS
 
-The rewrite should happen in vertical slices, not repo cleanup tasks.
+Delivery happened in vertical slices, not repo cleanup tasks, and the remaining hardening work should keep that same discipline.
 
-### 8.0.1 Rewrite Migration Strategy
+### 8.0.1 Migration Record
 
 **Status:** DONE
 
-The current implementation on `main` is not the foundation of the rewrite. It may be consulted as reference material, but `rewrite/v1` is free to replace endpoints, abstractions, and UI flows without preserving backward compatibility with unreleased `main` behavior.
+These notes capture how the delivered V1 replaced the earlier repo state without carrying unnecessary compatibility baggage.
 
 **Dimensions:**
-- 8.0.1.1 DONE Preserve the current implementation in Git history and, before invasive replacement work begins, anchor it with a dedicated legacy branch or tag such as `legacy/pre-rewrite` or `pre-rewrite-main`.
-- 8.0.1.2 DONE The rewrite happens in the active repository, ideally on a dedicated rewrite branch or worktree, and later becomes the new `main` via merge rather than by changing the default branch early.
-- 8.0.1.3 DONE Because this is a full rewrite of an unreleased product, no milestone should add backward-compatibility shims solely to mirror `main`. Prefer the clean V1 contract.
-- 8.0.1.4 DONE Do not keep a long-lived parallel `legacy/` app or duplicate frontend/backend tree on `main`; that would create drift, agent confusion, and extra maintenance cost.
+- 8.0.1.1 DONE Preserve major pre-launch states in Git history before invasive replacement work begins.
+- 8.0.1.2 DONE Replace the product in the active repository through dedicated feature branches and verified merges rather than by switching the default branch early.
+- 8.0.1.3 DONE Because the product was still pre-launch during the rebuild, no milestone added backward-compatibility shims solely to mirror earlier unreleased behavior.
+- 8.0.1.4 DONE Do not keep a long-lived parallel legacy app or duplicate frontend/backend tree on `main`; that would create drift, agent confusion, and extra maintenance cost.
 - 8.0.1.5 DONE Existing code may be consulted for ideas, mappings, fixtures, and operational lessons, but old component boundaries, endpoints, and abstractions are not treated as architecture constraints.
 - 8.0.1.6 DONE Replace the product milestone by milestone; once a new slice is real and verified, remove or supersede the old slice instead of maintaining both implementations in parallel.
 - 8.0.1.7 DONE Reuse is selective and explicit: keep only what still earns its place, such as data mappings, representative fixtures, or source lists, and rebuild the rest against the new contracts in this plan.
@@ -627,18 +634,18 @@ Eng review (Mar 23, 2026) with Codex outside voice identified simplification and
 **Status:** IN_PROGRESS
 
 **Dimensions:**
-- 8.7.1 DONE Add scheduled worker execution for management commands
+- 8.7.1 DONE Add host-cron execution for management commands
 - 8.7.2 DONE Add production settings, health checks, and deployment configuration
-- 8.7.3 PENDING Complete accessibility, responsive, and performance polish
-- 8.7.4 DONE Update README with setup, architecture, and screenshots
+- 8.7.3 IN_PROGRESS Complete accessibility, responsive, and performance polish
+- 8.7.4 DONE Update README and core docs with setup, architecture, verification, and deploy guidance
 - 8.7.5 DONE Add direct production deploy from `main`, automated migrations, health checks, and documented rollback steps
-- 8.7.6 PENDING Required tests: operational timing verification for scheduled worker SLAs, first live production deployment verification, and health check endpoint test coverage
+- 8.7.6 IN_PROGRESS Required tests: operational timing verification for scheduled job SLAs, production deployment verification, and health check endpoint coverage
 
 ---
 
 ## 9.0 Verification Gates
 
-**Status:** PENDING
+**Status:** IN_PROGRESS
 
 No milestone is complete without passing its verification gate. Gates are cumulative: each milestone inherits all gates from prior milestones.
 
@@ -681,30 +688,30 @@ No milestone is complete without passing its verification gate. Gates are cumula
 ### 9.6 M7 Gates (Hardening + Deploy)
 
 - 9.6.1 PENDING Operational timing proves quote refresh completes within 15 minutes and nightly ingestion or snapshot jobs complete within 60 minutes on normal V1 load
-- 9.6.2 PENDING Direct production deployment from `main` proves immutable artifact delivery, automated migration, and post-deploy health verification
+- 9.6.2 DONE Direct production deployment from `main` proves immutable artifact delivery, automated migration, and post-deploy health verification
 - 9.6.3 PENDING Protected-branch rules keep `main` merge-safe
 
 ---
 
 ## 10.0 Acceptance Criteria
 
-**Status:** PENDING
+**Status:** IN_PROGRESS
 
-- [ ] 10.1 Any S&P 500 company in scope can be searched and opened from the public landing page
-- [ ] 10.2 Core financial metrics render from canonical normalized SEC data
-- [ ] 10.3 Quote and price chart data use shared cached sources and expose freshness clearly
-- [ ] 10.4 Screener performance is driven by `MetricSnapshot`, not heavy request-time joins
-- [ ] 10.5 AI copilot answers per-company questions and bounded follow-up turns using structured StockPulse data as primary grounding, uses general financial knowledge only as explanatory context, and admits uncertainty when coverage is thin
-- [ ] 10.6 Users can register, log in, refresh auth state, and sign in with Google using secure cookie-based auth
-- [ ] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
-- [ ] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
-- [ ] 10.9 The repo has green lint, test, build, and smoke gates
-- [ ] 10.10 A documented S&P 500 coverage audit exists before launch, shows at least 95% coverage for the full launch-critical metric set, and calls out known gaps explicitly.
+- [x] 10.1 Any S&P 500 company in scope can be searched and opened from the public landing page
+- [x] 10.2 Core financial metrics render from canonical normalized SEC data
+- [x] 10.3 Quote and price chart data use shared cached sources and expose freshness clearly
+- [x] 10.4 Screener performance is driven by `MetricSnapshot`, not heavy request-time joins
+- [x] 10.5 AI copilot answers per-company questions and bounded follow-up turns using structured StockPulse data as primary grounding, uses general financial knowledge only as explanatory context, and admits uncertainty when coverage is thin
+- [x] 10.6 Users can register, log in, refresh auth state, and sign in with Google using secure cookie-based auth
+- [x] 10.7 AI quotas enforce 10 anonymous prompts per day and 50 authenticated prompts per day
+- [x] 10.8 The product is responsive, keyboard-usable, and visually consistent with `DESIGN.md`
+- [x] 10.9 The repo has green lint, test, build, and smoke gates
+- [x] 10.10 A documented S&P 500 coverage audit exists before launch, shows at least 95% coverage for the full launch-critical metric set, and calls out known gaps explicitly.
 Current status: the audit artifact at `docs/audits/sp500-launch-coverage-2026-03-22.md` passes the gate. `gross_profit` and `gross_margin` are evaluated only where retained SEC payloads expose a comparable gross-profit or cost-of-revenue concept.
-- [ ] 10.11 The scheduled-worker job model meets the documented V1 timing SLAs, or the plan is explicitly revised before launch
-- [ ] 10.12 Google sign-in and anonymous-to-authenticated AI upgrade flows are explicitly covered by launch smoke tests
+- [ ] 10.11 The scheduled job model meets the documented V1 timing SLAs, or the plan is explicitly revised before launch
+- [x] 10.12 Google sign-in and anonymous-to-authenticated AI upgrade flows are explicitly covered by launch smoke tests
 - [ ] 10.13 CI protects `main` with required backend, frontend, and smoke checks
-- [ ] 10.14 CD supports direct production deployment from `main`, automated migrations, and documented rollback
+- [x] 10.14 CD supports direct production deployment from `main`, automated migrations, and documented rollback
 
 Launch-critical metric set for 10.10:
 - revenue

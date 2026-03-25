@@ -164,12 +164,32 @@ nano /opt/stockpulse/.env
 
 Paste this (fill in real values):
 ```
+STOCKPULSE_ENV=production
+APP_IMAGE_TAG=SET_BY_DEPLOY_WORKFLOW
 SECRET_KEY=GENERATE_ONE_BELOW
 DEBUG=False
 DATABASE_URL=postgres://stockpulse:YOUR_DB_PASSWORD@db:5432/stockpulse
 POSTGRES_PASSWORD=YOUR_DB_PASSWORD
 ALLOWED_HOSTS=stockpulse.hiteshsadhwani.xyz
 CORS_ALLOWED_ORIGINS=https://stockpulse.hiteshsadhwani.xyz
+FRONTEND_APP_ORIGIN=https://stockpulse.hiteshsadhwani.xyz
+ENABLE_GOOGLE_OAUTH_MOCK=False
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+DEFAULT_FROM_EMAIL=noreply@stockpulse.hiteshsadhwani.xyz
+SERVER_EMAIL=noreply@stockpulse.hiteshsadhwani.xyz
+EMAIL_HOST=smtp.your-provider.example
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-smtp-user
+EMAIL_HOST_PASSWORD=your-smtp-password
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+PASSWORD_RESET_TIMEOUT=3600
+AUTH_REGISTER_RATE=5/h
+AUTH_LOGIN_RATE=10/m
+EMAIL_VERIFICATION_RESEND_RATE=5/h
+EMAIL_VERIFICATION_CONFIRM_RATE=15/h
+PASSWORD_RESET_REQUEST_RATE=5/h
+PASSWORD_RESET_CONFIRM_RATE=10/h
 AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 GOOGLE_OAUTH_CLIENT_ID=your-google-client-id
@@ -183,6 +203,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
 
 Choose a strong POSTGRES_PASSWORD and use it in both `POSTGRES_PASSWORD` and `DATABASE_URL`.
+Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS`/`FRONTEND_APP_ORIGIN` are missing, an insecure email backend is configured, `DEFAULT_FROM_EMAIL` is blank, SMTP is selected without `EMAIL_HOST`, or mock Google OAuth is left enabled.
+
+Password reset and email verification in production both depend on the SMTP settings above. After the first deploy, confirm that `/verify-email` and `/reset-password` both work against a real inbox.
 
 Save and exit (Ctrl+X, Y, Enter in nano).
 
@@ -279,6 +302,7 @@ git push origin main
 ```
 
 GitHub Actions will: build image → push to GHCR → SSH deploy → migrate → health check.
+The deploy workflow also pins `APP_IMAGE_TAG` to the exact commit SHA that passed CI and verifies that `stockpulse-web` is running that same SHA-tagged image.
 
 Important note:
 - the deploy health check hits Gunicorn on `127.0.0.1:8000`, but it must send the production `Host` header plus `X-Forwarded-Proto: https`
@@ -374,13 +398,13 @@ sudo certbot --nginx -d stockpulse.hiteshsadhwani.xyz
 ### Roll back to a previous image
 If a release is bad and the migration is backward-compatible:
 1. Find the previous good commit SHA on GitHub
-2. Edit `/opt/stockpulse/docker-compose.yml` on the server and change the `web` image tag from `latest` to that SHA tag
+2. Update `APP_IMAGE_TAG` in `/opt/stockpulse/.env` to that SHA
 3. Run:
 
 ```bash
 cd /opt/stockpulse
-docker compose pull
-docker compose up -d --remove-orphans
+APP_IMAGE_TAG=<GOOD_SHA> docker compose pull web
+APP_IMAGE_TAG=<GOOD_SHA> docker compose up -d --remove-orphans
 ```
 
 After the rollback, revisit the app health and smoke checks before considering the incident closed.
@@ -412,7 +436,8 @@ docker compose logs -f
 docker compose restart
 
 # Rebuild and restart
-docker compose pull && docker compose up -d --remove-orphans
+APP_IMAGE_TAG=$(grep '^APP_IMAGE_TAG=' .env | cut -d= -f2) docker compose pull web && \
+APP_IMAGE_TAG=$(grep '^APP_IMAGE_TAG=' .env | cut -d= -f2) docker compose up -d --remove-orphans
 
 # Run Django management command
 docker exec stockpulse-web python manage.py <command>

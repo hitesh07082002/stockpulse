@@ -3,15 +3,15 @@
 ## Pre-Deploy
 
 ### First Production Rollout Verification
-**What:** Finish the first real production rollout from `main`, then verify health, landing/search, stock detail, auth, AI, and cron-backed data refresh behavior on the live domain.
-**Why:** M7 deployment infrastructure is implemented, but the live rollout and operator verification pass are still the last serious launch gate.
+**What:** Confirmed production rollout from `main`, plus live verification of health, landing/search, stock detail, auth, AI, and cron-backed data refresh behavior on the real domain.
+**Why:** This was the last serious launch gate. It is now complete and should remain documented as the baseline production verification pass.
 **Depends on:** Production server setup, GitHub Actions deploy secrets, and a green PR merge to `main`.
-**Status:** Not started
+**Status:** Done
 
 ### Protect `main` With Required Checks
 **What:** Turn on GitHub branch protection for `main` and require backend, frontend, and Playwright smoke checks before merge.
-**Why:** The CI pipeline is in place, but the repo is not fully launch-safe until `main` is protected from unverified merges.
-**Depends on:** CI staying green on the current rewrite branch.
+**Why:** CI and deploy are in place, but the repo is not fully merge-safe until `main` is protected from unverified pushes.
+**Depends on:** The current `Backend checks`, `Frontend checks`, and `Playwright smoke` workflows remaining green.
 **Status:** Not started
 
 ### SEC Fair-Access Verification
@@ -24,7 +24,7 @@
 **What:** Curate the small residual override set for `description`, `website`, and `exchange` after the first automated metadata backfill. Current known gap: `FISV`.
 **Why:** The enrichment command is landed, but the last few low-quality or missing Yahoo records should be fixed in the tracked override CSV so the product reaches effectively complete metadata coverage.
 **Plan:** See [`docs/company-metadata-ingestion-plan.md`](./company-metadata-ingestion-plan.md).
-**Depends on:** `enrich_company_metadata` being in place and run at least once.
+**Depends on:** `enrich_company_metadata` being in place, with the weekly cron refresh already wired in production.
 **Status:** Not started
 
 ## Post-V1

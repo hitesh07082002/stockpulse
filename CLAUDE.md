@@ -4,7 +4,7 @@ AI-powered stock analysis platform — React + Django + PostgreSQL.
 
 ## Read This First
 
-This repo is in a scratch-build rewrite phase.
+This repo is the live StockPulse application.
 
 Start here:
 
@@ -19,11 +19,21 @@ Start here:
 
 ## Important Context
 
-- the current implementation under [`backend`](./backend) and [`frontend`](./frontend) is legacy reference material
-- the rewrite should follow the milestone order in [`plan.md`](./docs/plan.md)
+- the current implementation under [`backend`](./backend) and [`frontend`](./frontend) is the source of truth
+- the planning docs still matter, but they now describe shipped architecture plus remaining hardening work
 - Financials is the hero tab
 - Valuation is Qualtrim-like
 - AI is supporting, not the main character
+
+## Testing
+
+Canonical verification commands:
+
+- `make lint`
+- `make test`
+- `make build`
+- `make qa-smoke`
+- `make qa`
 
 ## Design System
 

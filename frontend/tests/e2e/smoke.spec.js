@@ -117,6 +117,45 @@ test('screener filters into a company detail flow', async ({ page }) => {
   await expect(page.getByText(ticker, { exact: true })).toBeVisible();
 });
 
+test.describe('mobile responsive flows', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('mobile screener uses the filter sheet and card results without overflow', async ({ page }) => {
+    await page.goto('/screener');
+
+    await page.getByRole('button', { name: /^filters$/i }).click();
+    const filterDialog = page.getByRole('dialog', { name: /refine results/i });
+    await expect(filterDialog).toBeVisible();
+
+    await filterDialog.getByRole('combobox').selectOption('Information Technology');
+    await filterDialog.getByRole('button', { name: /apply filters/i }).click();
+    await expect(filterDialog).toHaveCount(0);
+
+    await expect(page.locator('table')).toHaveCount(0);
+    await expect(page.getByText(/tap a company card to jump into the full detail view/i)).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+
+  test('mobile stock detail keeps tabs and copilot input usable without overflow', async ({ page }) => {
+    await page.goto('/stock/AAPL');
+
+    await expect(page.getByRole('tab', { name: 'Financials' })).toBeVisible();
+    await page.getByRole('tab', { name: 'AI' }).click();
+    await expect(page.getByPlaceholder('Ask a question...')).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  });
+});
+
 test('invalid ticker renders the search-facing not-found state', async ({ page }) => {
   await page.goto('/stock/INVALIDTICKER');
 
@@ -124,7 +163,7 @@ test('invalid ticker renders the search-facing not-found state', async ({ page }
   await expect(page.getByRole('link', { name: /back to search/i })).toBeVisible();
 });
 
-test('auth modal supports register, login, and logout', async ({ page }) => {
+test('auth modal routes new email signups into verification', async ({ page }) => {
   const email = `oracle+${Date.now()}@example.com`;
   const password = 'StockPulse123!';
 
@@ -140,20 +179,10 @@ test('auth modal supports register, login, and logout', async ({ page }) => {
   await page.getByLabel('Password').fill(password);
   await page.locator('form').getByRole('button', { name: /^create account$/i }).click();
 
-  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
-  await expect(page.getByText(/oracle user/i)).toBeVisible();
-
-  await page.getByRole('button', { name: /sign out/i }).click();
-  await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible();
-
-  await page.getByRole('button', { name: /^sign in$/i }).click();
-  await page.getByRole('button', { name: /use email instead/i }).click();
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: /sign in with email/i }).click();
-
-  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
-  await expect(page.getByText(/50 ai prompts\/day/i)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/verify-email\\?email=${encodeURIComponent(email)}`));
+  await expect(page.getByRole('heading', { name: /verify your email/i })).toBeVisible();
+  await expect(page.getByText(new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))).toBeVisible();
+  await expect(page.getByRole('button', { name: /resend verification email/i })).toBeVisible();
 });
 
 test('google sign-in completes through the local mock consent flow', async ({ page }) => {
@@ -173,4 +202,59 @@ test('google sign-in completes through the local mock consent flow', async ({ pa
   }).toBe('/');
   await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
   await expect(page.getByText(/demo user/i)).toBeVisible();
+});
+
+test('password reset request and confirm routes support account recovery', async ({ page }) => {
+  await page.route('**/api/auth/password-reset/request/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'If an account exists for that email, we sent a reset link.',
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/password-reset/confirm/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Password updated. Sign in with your new password.',
+      }),
+    });
+  });
+
+  await page.goto('/reset-password');
+  await page.getByLabel('Email').fill('oracle@example.com');
+  await page.getByRole('button', { name: /send reset link/i }).click();
+  await expect(page.getByRole('heading', { name: /check your inbox/i })).toBeVisible();
+
+  await page.goto('/reset-password?uid=test-uid&token=test-token');
+  await page.getByLabel('New password').fill('NewStockPulse123!');
+  await page.getByLabel('Confirm password').fill('NewStockPulse123!');
+  await page.getByRole('button', { name: /update password/i }).click();
+  await expect(page.getByRole('heading', { name: /you can sign in now/i })).toBeVisible();
+});
+
+test('email verification confirm route supports account activation', async ({ page }) => {
+  await page.route('**/api/auth/email-verification/confirm/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Email verified. You can sign in now.',
+      }),
+    });
+  });
+
+  await page.goto('/verify-email?uid=test-uid&token=test-token');
+  await expect(page.getByRole('heading', { name: /your account is ready/i })).toBeVisible();
+  await expect(page.getByText(/your email has been verified successfully/i)).toBeVisible();
 });

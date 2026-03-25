@@ -39,6 +39,7 @@ def company():
         revenue_growth_yoy=Decimal("0.1200"),
         operating_margin=Decimal("0.4400"),
         net_margin=Decimal("0.3600"),
+        roe=Decimal("0.2850"),
         free_cash_flow=Decimal("100000000000"),
     )
 
@@ -139,6 +140,7 @@ def test_company_detail_includes_related_metrics(api_client, company):
     assert payload["dividend_yield"] == 0.0085
     assert payload["revenue_growth_yoy"] == 0.12
     assert payload["net_margin"] == 0.36
+    assert payload["roe"] == 0.285
     assert payload["free_cash_flow"] == 100000000000.0
     assert payload["latest_revenue"] == 245122000000.0
 

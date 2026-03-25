@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useFinancials } from '../../hooks/useStockData';
+import { buildChartData, collectSortedPeriods, processFinancialData } from './financials-helpers';
 
 /* ────────────────────────────────────────────
    Format helpers
@@ -40,14 +41,14 @@ function formatPercent(n) {
 
 function formatChartValue(value, metric) {
   if (value == null || isNaN(value)) return '—';
-  if (PERCENT_METRICS.includes(metric)) return formatPercent(value);
+  if (PERCENT_METRIC_KEYS.has(metric)) return formatPercent(value);
   if (metric === 'diluted_eps') return formatEPS(value);
   return formatLargeNumber(value);
 }
 
 function formatYAxis(value, metric) {
   if (value == null || isNaN(value)) return '';
-  if (PERCENT_METRICS.includes(metric)) {
+  if (PERCENT_METRIC_KEYS.has(metric)) {
     return `${(value * 100).toFixed(0)}%`;
   }
   if (metric === 'diluted_eps') return `$${value.toFixed(1)}`;
@@ -70,6 +71,7 @@ const PERCENT_METRICS = [
   'net_margin',
   'roe',
 ];
+const PERCENT_METRIC_KEYS = new Set(PERCENT_METRICS);
 
 const TOP_METRICS = [
   { key: 'revenue', label: 'Revenue' },
@@ -95,99 +97,6 @@ const LINE_METRICS = new Set([
   'net_margin',
   'roe',
 ]);
-
-/* ────────────────────────────────────────────
-   Data processing
-   ──────────────────────────────────────────── */
-
-function processFinancialData(rawData) {
-  if (!rawData || !Array.isArray(rawData) || rawData.length === 0) return {};
-
-  const grouped = {};
-
-  for (const row of rawData) {
-    const metric = row.metric_key;
-    const value = row.value != null ? Number(row.value) : null;
-    const fiscalYear = row.fiscal_year ?? null;
-    const fiscalQuarter = row.fiscal_quarter ?? null;
-    const isQuarterly = row.period_type === 'quarterly';
-    const periodKey = isQuarterly
-      ? `${fiscalYear}-Q${fiscalQuarter}`
-      : String(fiscalYear ?? row.fiscal_period ?? row.period);
-    const label = isQuarterly
-      ? `${fiscalYear} Q${fiscalQuarter}`
-      : String(fiscalYear ?? row.fiscal_period ?? row.period);
-    const sortValue = isQuarterly
-      ? ((fiscalYear ?? 0) * 10) + (fiscalQuarter ?? 0)
-      : (fiscalYear ?? 0) * 10;
-
-    if (!grouped[metric]) grouped[metric] = {};
-    grouped[metric][periodKey] = {
-      value,
-      label,
-      sortValue,
-    };
-  }
-
-  return grouped;
-}
-
-function buildChartData(grouped, metric, periodType) {
-  const allPeriods = new Map();
-  for (const m of Object.keys(grouped)) {
-    for (const [periodKey, meta] of Object.entries(grouped[m])) {
-      if (!allPeriods.has(periodKey)) {
-        allPeriods.set(periodKey, meta);
-      }
-    }
-  }
-
-  const periods = Array.from(allPeriods.entries())
-    .sort(([, left], [, right]) => left.sortValue - right.sortValue);
-
-  return periods.map(([periodKey, meta]) => {
-    let value = null;
-
-    if (metric === 'free_cash_flow') {
-      const directFcf = grouped['free_cash_flow']?.[periodKey]?.value;
-      if (directFcf != null) {
-        value = directFcf;
-      } else {
-        const ocf = grouped['operating_cash_flow']?.[periodKey]?.value;
-        const capex = grouped['capital_expenditures']?.[periodKey]?.value;
-        if (ocf != null && capex != null) {
-          value = ocf - Math.abs(capex);
-        }
-      }
-    } else if (metric === 'gross_margin') {
-      const gp = grouped['gross_profit']?.[periodKey]?.value;
-      const rev = grouped['revenue']?.[periodKey]?.value;
-      if (gp != null && rev != null && rev !== 0) {
-        value = gp / rev;
-      }
-    } else if (metric === 'operating_margin') {
-      const oi = grouped['operating_income']?.[periodKey]?.value;
-      const rev = grouped['revenue']?.[periodKey]?.value;
-      if (oi != null && rev != null && rev !== 0) {
-        value = oi / rev;
-      }
-    } else if (metric === 'net_margin') {
-      const ni = grouped['net_income']?.[periodKey]?.value;
-      const rev = grouped['revenue']?.[periodKey]?.value;
-      if (ni != null && rev != null && rev !== 0) {
-        value = ni / rev;
-      }
-    } else {
-      value = grouped[metric]?.[periodKey]?.value ?? null;
-    }
-
-    return {
-      period: periodKey,
-      value,
-      label: periodType === 'quarterly' ? meta.label : String(meta.label),
-    };
-  }).filter((d) => d.value != null);
-}
 
 function computeYoY(chartData) {
   if (!chartData || chartData.length < 2) return null;
@@ -256,18 +165,19 @@ function FinancialsTab({ ticker }) {
   const rawData = useMemo(() => financialResponse?.facts ?? [], [financialResponse]);
 
   const grouped = useMemo(() => processFinancialData(rawData), [rawData]);
+  const periods = useMemo(() => collectSortedPeriods(grouped), [grouped]);
 
   const topMetricData = useMemo(() => {
     const result = {};
     for (const m of TOP_METRICS) {
-      result[m.key] = buildChartData(grouped, m.key, periodType);
+      result[m.key] = buildChartData(grouped, periods, m.key, periodType);
     }
     return result;
-  }, [grouped, periodType]);
+  }, [grouped, periods, periodType]);
 
   const chartData = useMemo(
-    () => buildChartData(grouped, selectedMetric, periodType),
-    [grouped, selectedMetric, periodType],
+    () => buildChartData(grouped, periods, selectedMetric, periodType),
+    [grouped, periods, selectedMetric, periodType],
   );
 
   const selectedLabel =

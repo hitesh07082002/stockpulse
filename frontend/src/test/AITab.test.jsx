@@ -133,4 +133,48 @@ describe('AITab', () => {
 
     expect(openAuthModal).toHaveBeenCalledWith('login');
   });
+
+  it('removes the empty assistant placeholder when the stream fails before text', async () => {
+    setupAuth({ isAuthenticated: true, currentDaily: 50, authenticatedDaily: 50 });
+
+    sendChatMessageMock.mockImplementation(async function* () {
+      yield {
+        type: 'error',
+        code: 'provider_timeout',
+        message: 'The AI copilot timed out. Please try again.',
+        remainingQuota: 50,
+      };
+    });
+
+    renderTab();
+    await submitPrompt('Explain operating margins');
+
+    await screen.findByText(/the ai copilot timed out\. please try again\./i);
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no response returned/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/explain operating margins/i)).toHaveLength(1);
+  });
+
+  it('keeps partial assistant output visible when the stream fails after text', async () => {
+    setupAuth({ isAuthenticated: true, currentDaily: 50, authenticatedDaily: 50 });
+
+    sendChatMessageMock.mockImplementation(async function* () {
+      yield { type: 'text', content: 'Margins expanded due to mix shift.' };
+      yield {
+        type: 'error',
+        code: 'provider_timeout',
+        message: 'The AI copilot timed out. Please try again.',
+        partial: true,
+        remainingQuota: 49,
+      };
+    });
+
+    renderTab();
+    await submitPrompt('Explain operating margins');
+
+    await screen.findByText(/margins expanded due to mix shift\./i);
+    await screen.findByText(/the ai copilot timed out\. please try again\./i);
+    expect(screen.queryByText(/no response returned/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/49 left today/i)).toBeInTheDocument();
+  });
 });

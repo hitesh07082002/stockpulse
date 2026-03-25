@@ -25,6 +25,7 @@ class CompanyDetailSerializer(serializers.ModelSerializer):
     revenue_growth_yoy = serializers.SerializerMethodField()
     operating_margin = serializers.SerializerMethodField()
     net_margin = serializers.SerializerMethodField()
+    roe = serializers.SerializerMethodField()
     free_cash_flow = serializers.SerializerMethodField()
     latest_revenue = serializers.SerializerMethodField()
 
@@ -35,7 +36,7 @@ class CompanyDetailSerializer(serializers.ModelSerializer):
             'current_price', 'market_cap', 'week_52_high', 'week_52_low',
             'shares_outstanding', 'quote_updated_at', 'facts_updated_at',
             'pe_ratio', 'dividend_yield', 'revenue_growth_yoy',
-            'operating_margin', 'net_margin', 'free_cash_flow', 'latest_revenue',
+            'operating_margin', 'net_margin', 'roe', 'free_cash_flow', 'latest_revenue',
         ]
 
     def _snapshot(self, obj):
@@ -72,6 +73,9 @@ class CompanyDetailSerializer(serializers.ModelSerializer):
 
     def get_net_margin(self, obj):
         return self._snapshot_value(obj, 'net_margin')
+
+    def get_roe(self, obj):
+        return self._snapshot_value(obj, 'roe')
 
     def get_free_cash_flow(self, obj):
         return self._snapshot_value(obj, 'free_cash_flow')

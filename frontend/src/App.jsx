@@ -7,10 +7,12 @@ import LandingPage from './pages/LandingPage';
 const StockDetailPage = lazy(() => import('./pages/StockDetailPage'));
 const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
+const PasswordResetPage = lazy(() => import('./pages/PasswordResetPage'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 
 function RouteFallback() {
   return (
-    <div className="min-h-[calc(100vh-56px-80px)] px-4 py-10">
+    <div className="min-h-[var(--shell-content-min-height)] px-4 py-10">
       <div className="mx-auto flex max-w-[1280px] flex-col gap-4">
         <div className="skeleton h-10 w-56 rounded" />
         <div className="skeleton h-6 w-80 rounded" />
@@ -26,6 +28,22 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/verify-email"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <VerifyEmailPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/reset-password"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <PasswordResetPage />
+              </Suspense>
+            )}
+          />
           <Route
             path="/stock/:ticker"
             element={(

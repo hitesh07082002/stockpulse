@@ -140,6 +140,7 @@ class Command(BaseCommand):
         diluted_eps = self._latest_annual_value(facts_by_metric, "diluted_eps")
         dividends_per_share = self._latest_annual_value(facts_by_metric, "dividends_per_share")
         shareholders_equity = self._latest_annual_value(facts_by_metric, "shareholders_equity")
+        previous_shareholders_equity = self._previous_annual_value(facts_by_metric, "shareholders_equity")
         total_debt = self._latest_annual_value(facts_by_metric, "total_debt")
         free_cash_flow = self._latest_annual_value(facts_by_metric, "free_cash_flow")
 
@@ -161,6 +162,11 @@ class Command(BaseCommand):
         if revenue is not None and previous_revenue not in (None, Decimal("0")):
             revenue_growth_yoy = (revenue - previous_revenue) / abs(previous_revenue)
 
+        average_shareholders_equity = self._average_balance(
+            shareholders_equity,
+            previous_shareholders_equity,
+        )
+
         return {
             "pe_ratio": pe_ratio,
             "dividend_yield": dividend_yield,
@@ -168,7 +174,7 @@ class Command(BaseCommand):
             "gross_margin": self._safe_divide(gross_profit, revenue),
             "operating_margin": self._safe_divide(operating_income, revenue),
             "net_margin": self._safe_divide(net_income, revenue),
-            "roe": self._safe_divide(net_income, shareholders_equity),
+            "roe": self._safe_divide(net_income, average_shareholders_equity),
             "debt_to_equity": self._safe_divide(total_debt, shareholders_equity),
             "free_cash_flow": free_cash_flow,
         }
@@ -185,3 +191,10 @@ class Command(BaseCommand):
         if numerator is None or denominator in (None, Decimal("0")):
             return None
         return numerator / denominator
+
+    def _average_balance(self, current_value, previous_value):
+        if current_value is None:
+            return None
+        if previous_value is None:
+            return current_value
+        return (current_value + previous_value) / Decimal("2")

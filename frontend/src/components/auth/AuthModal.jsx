@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from './useAuth';
 
 function AuthNotice({ children }) {
@@ -21,6 +22,7 @@ function AuthModalCard({
   isSubmitting,
   login,
   openAuthModal,
+  openPasswordReset,
   register,
   setAuthMode,
   startGoogle,
@@ -64,7 +66,7 @@ function AuthModalCard({
             {authMode === 'register' ? 'Create your account' : 'Sign in to StockPulse'}
           </p>
           <p className="font-body text-sm text-text-secondary">
-            Browsing stays open. Sign in raises your AI allowance and unlocks future account features.
+            Browsing stays open. Google and email/password both unlock the full authenticated experience.
           </p>
         </div>
         <button
@@ -132,41 +134,61 @@ function AuthModalCard({
         ) : (
           <form className="space-y-4 rounded-2xl border border-border bg-base/60 p-4" onSubmit={handleSubmit}>
             {authMode === 'register' && (
-              <label className="block space-y-2">
-                <span className="font-body text-sm text-text-secondary">Name</span>
-                <input
-                  type="text"
-                  value={formValues.name}
-                  onChange={(event) => setFormValues((current) => ({ ...current, name: event.target.value }))}
-                  className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
-                  placeholder="Your name"
-                />
-              </label>
+              <>
+                <label className="block space-y-2">
+                  <span className="font-body text-sm text-text-secondary">Name</span>
+                  <input
+                    type="text"
+                    value={formValues.name}
+                    onChange={(event) => setFormValues((current) => ({ ...current, name: event.target.value }))}
+                    autoComplete="name"
+                    className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
+                    placeholder="Your name"
+                  />
+                </label>
+                <AuthNotice>
+                  New email/password accounts require one email verification before the first sign-in.
+                </AuthNotice>
+              </>
             )}
 
             <label className="block space-y-2">
               <span className="font-body text-sm text-text-secondary">Email</span>
-              <input
-                type="email"
-                value={formValues.email}
-                onChange={(event) => setFormValues((current) => ({ ...current, email: event.target.value }))}
-                className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
-                placeholder="you@example.com"
-                required
+                <input
+                  type="email"
+                  value={formValues.email}
+                  onChange={(event) => setFormValues((current) => ({ ...current, email: event.target.value }))}
+                  autoComplete="email"
+                  className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
+                  placeholder="you@example.com"
+                  required
               />
             </label>
 
             <label className="block space-y-2">
               <span className="font-body text-sm text-text-secondary">Password</span>
-              <input
-                type="password"
-                value={formValues.password}
-                onChange={(event) => setFormValues((current) => ({ ...current, password: event.target.value }))}
-                className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
-                placeholder="At least 8 characters"
-                required
-              />
+                <input
+                  type="password"
+                  value={formValues.password}
+                  onChange={(event) => setFormValues((current) => ({ ...current, password: event.target.value }))}
+                  autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                  className="w-full rounded-lg border border-border bg-elevated px-3 py-2 text-text-primary outline-none transition-colors focus:border-accent"
+                  placeholder="At least 8 characters"
+                  required
+                />
             </label>
+
+            {authMode === 'login' && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={openPasswordReset}
+                  className="text-sm text-accent transition-colors hover:text-accent-hover"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
 
             {authError && (
               <AuthNotice>{authError}</AuthNotice>
@@ -192,7 +214,7 @@ function AuthModalCard({
         )}
 
         <div className="flex items-center justify-between gap-4 text-xs text-text-tertiary">
-          <span>Google is the primary path in V1.</span>
+          <span>Email and Google auth are both supported.</span>
           <button
             type="button"
             onClick={() => openAuthModal(authMode === 'login' ? 'register' : 'login')}
@@ -207,6 +229,7 @@ function AuthModalCard({
 }
 
 export default function AuthModal() {
+  const navigate = useNavigate();
   const {
     authMode,
     authError,
@@ -220,6 +243,11 @@ export default function AuthModal() {
     setAuthMode,
     startGoogle,
   } = useAuth();
+
+  function handleOpenPasswordReset() {
+    closeAuthModal();
+    navigate('/reset-password');
+  }
 
   if (!isAuthModalOpen) {
     return null;
@@ -236,6 +264,7 @@ export default function AuthModal() {
         isSubmitting={isSubmitting}
         login={login}
         openAuthModal={openAuthModal}
+        openPasswordReset={handleOpenPasswordReset}
         register={register}
         setAuthMode={setAuthMode}
         startGoogle={startGoogle}

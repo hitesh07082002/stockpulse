@@ -22,6 +22,7 @@ const AUTHENTICATED_SESSION = {
   user: {
     id: 7,
     email: 'oracle@example.com',
+    email_verified: true,
     name: 'Oracle User',
     providers: ['email'],
   },
@@ -65,6 +66,7 @@ function renderApp(initialEntry = '/') {
 describe('Auth flow', () => {
   beforeEach(() => {
     let currentSession = ANONYMOUS_SESSION;
+    let registeredEmail = 'oracle@example.com';
 
     vi.stubGlobal('fetch', vi.fn((input, init = {}) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -79,13 +81,24 @@ describe('Auth flow', () => {
       }
 
       if (url.includes('/auth/register/') && method === 'POST') {
-        currentSession = AUTHENTICATED_SESSION;
-        return Promise.resolve(jsonResponse(AUTHENTICATED_SESSION, { status: 201 }));
+        const payload = JSON.parse(init.body);
+        registeredEmail = payload.email;
+        return Promise.resolve(jsonResponse({
+          message: 'Check your inbox to verify your email before signing in.',
+          email_verification_required: true,
+          email: payload.email,
+        }, { status: 202 }));
       }
 
       if (url.includes('/auth/login/') && method === 'POST') {
         currentSession = AUTHENTICATED_SESSION;
-        return Promise.resolve(jsonResponse(AUTHENTICATED_SESSION));
+        return Promise.resolve(jsonResponse({
+          ...AUTHENTICATED_SESSION,
+          user: {
+            ...AUTHENTICATED_SESSION.user,
+            email: registeredEmail,
+          },
+        }));
       }
 
       if (url.includes('/auth/logout/') && method === 'POST') {
@@ -103,7 +116,7 @@ describe('Auth flow', () => {
     vi.unstubAllGlobals();
   });
 
-  it('supports register, logout, and login from the auth modal', async () => {
+  it('routes email registration into the verification page', async () => {
     renderApp('/');
 
     fireEvent.click(await screen.findByRole('button', { name: /^sign in$/i }));
@@ -118,13 +131,15 @@ describe('Auth flow', () => {
     fireEvent.change(within(registerDialog).getByPlaceholderText(/at least 8 characters/i), { target: { value: 'StockPulse123!' } });
     fireEvent.click(within(registerDialog).getAllByRole('button', { name: /^create account$/i })[1]);
 
-    expect(await screen.findByText(/oracle user/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /verify your email/i })).toBeInTheDocument();
+    expect(screen.getByText(/oracle@example\.com/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resend verification email/i })).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
-    expect(await screen.findByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
+  it('supports login and logout from the auth modal for a verified account', async () => {
+    renderApp('/');
 
-    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^sign in$/i }));
     const loginDialog = screen.getByRole('dialog');
     fireEvent.click(within(loginDialog).getByRole('button', { name: /use email instead/i }));
     fireEvent.change(within(loginDialog).getByPlaceholderText(/you@example.com/i), { target: { value: 'oracle@example.com' } });
@@ -133,5 +148,8 @@ describe('Auth flow', () => {
 
     expect(await screen.findByRole('button', { name: /sign out/i })).toBeInTheDocument();
     expect(screen.getByText(/50 ai prompts\/day/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
+    expect(await screen.findByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });
 });

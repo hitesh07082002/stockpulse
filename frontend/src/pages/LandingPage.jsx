@@ -299,7 +299,7 @@ export default function LandingPage() {
   const showLiveStrip = !isLoading && !isError && (liveCompanies?.length ?? 0) > 0;
 
   return (
-    <main className="min-h-[calc(100vh-56px-80px)] px-4">
+    <section className="min-h-[var(--shell-content-min-height)] px-4">
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-6 py-16 text-center">
         <div className="flex flex-col items-center gap-4">
           <h1 className="font-display text-[3.5rem] leading-none font-medium tracking-tight text-text-primary">
@@ -317,7 +317,7 @@ export default function LandingPage() {
             <button
               key={ticker}
               type="button"
-              className="rounded-full border border-border bg-elevated px-3 py-1.5 font-data text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-hover"
+              className="min-h-11 rounded-full border border-border bg-elevated px-4 py-2 font-data text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-hover"
               onClick={() => navigate(`/stock/${ticker}`)}
             >
               {ticker}
@@ -326,22 +326,17 @@ export default function LandingPage() {
         </div>
 
         <p className="font-data text-sm text-text-tertiary">
-          500 companies · 30yr SEC filings · Updated daily
+          500 companies · 30yr SEC filings · Prices refresh every 15 min
         </p>
 
         {showLiveStrip && (
-          <div className="w-[calc(100vw-2rem)] max-w-5xl overflow-x-auto">
-            <div className="mx-auto flex min-w-max items-center justify-center gap-4 px-2">
-              {liveCompanies.map((company, index) => (
-                <React.Fragment key={company.ticker}>
-                  {index > 0 && (
-                    <span className="font-data text-sm text-text-tertiary" aria-hidden="true">
-                      ·
-                    </span>
-                  )}
+          <div className="w-full max-w-5xl">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
+                {liveCompanies.map((company) => (
                   <button
+                    key={company.ticker}
                     type="button"
-                    className="inline-flex items-center gap-2 font-data text-sm transition-colors hover:text-accent"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 font-data text-sm transition-colors hover:border-accent hover:bg-hover sm:min-h-0 sm:rounded-none sm:border-none sm:bg-transparent sm:px-0 sm:py-0 sm:hover:bg-transparent sm:hover:text-accent"
                     onClick={() => navigate(`/stock/${company.ticker}`)}
                   >
                     <span className="font-bold text-accent">{company.ticker}</span>
@@ -356,8 +351,7 @@ export default function LandingPage() {
                       </span>
                     )}
                   </button>
-                </React.Fragment>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -365,18 +359,18 @@ export default function LandingPage() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm">
           <Link
             to="/screener"
-            className="font-body text-accent transition-colors hover:text-accent-hover"
+            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
           >
             Open screener →
           </Link>
           <Link
             to="/about"
-            className="font-body text-accent transition-colors hover:text-accent-hover"
+            className="inline-flex min-h-11 items-center font-body text-accent transition-colors hover:text-accent-hover"
           >
             About →
           </Link>
         </div>
       </div>
-    </main>
+    </section>
   );
 }
