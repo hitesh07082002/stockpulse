@@ -4,6 +4,8 @@ import {
   sendChatMessage,
 } from '../../../utils/api';
 
+const CONTINUE_PROMPT = 'Continue from exactly where you stopped. Do not repeat earlier points.';
+
 function getStreamRemainingQuota(payload) {
   const candidates = [
     payload?.remainingQuota,
@@ -43,6 +45,7 @@ export function useCopilotChat({ ticker }) {
   const [errorStatus, setErrorStatus] = useState(null);
   const [streamMeta, setStreamMeta] = useState(null);
   const [remainingQuota, setRemainingQuota] = useState(null);
+  const [canContinue, setCanContinue] = useState(false);
 
   const messageIdRef = useRef(0);
 
@@ -98,27 +101,54 @@ export function useCopilotChat({ ticker }) {
     });
   }
 
+  function startAssistantMessage({ userText = null, resumeLastAssistant = false }) {
+    setMessages((prev) => {
+      if (resumeLastAssistant) {
+        const updated = [...prev];
+        const lastIndex = updated.length - 1;
+        const lastMessage = updated[lastIndex];
+        if (lastMessage?.role === 'assistant') {
+          updated[lastIndex] = {
+            ...lastMessage,
+            status: 'streaming',
+          };
+          return updated;
+        }
+
+        return [...prev, createMessage('assistant', '', 'streaming')];
+      }
+
+      return [
+        ...prev,
+        createMessage('user', userText),
+        createMessage('assistant', '', 'streaming'),
+      ];
+    });
+  }
+
   function buildConversationHistory() {
     return normalizeCopilotHistory(messages);
   }
 
-  async function handleSend(messageText) {
+  async function streamAssistantReply(messageText, { showUserMessage = true } = {}) {
     const text = (messageText || '').trim();
     if (!text || isStreaming) return;
 
     setError('');
     setErrorCode('');
     setErrorStatus(null);
-    setStreamMeta(null);
-    setInput('');
+    setCanContinue(false);
+    if (showUserMessage) {
+      setStreamMeta(null);
+      setInput('');
+    }
 
     const history = buildConversationHistory();
 
-    setMessages((prev) => [
-      ...prev,
-      createMessage('user', text),
-      createMessage('assistant', '', 'streaming'),
-    ]);
+    startAssistantMessage({
+      userText: text,
+      resumeLastAssistant: !showUserMessage,
+    });
 
     setIsStreaming(true);
 
@@ -155,6 +185,7 @@ export function useCopilotChat({ ticker }) {
           if (streamRemaining !== null) {
             setRemainingQuota(streamRemaining);
           }
+          setCanContinue(Boolean(event.canContinue));
           settleAssistantMessage();
           return;
         }
@@ -167,6 +198,7 @@ export function useCopilotChat({ ticker }) {
           if (streamRemaining !== null) {
             setRemainingQuota(streamRemaining);
           }
+          setCanContinue(Boolean(event.canContinue));
           settleAssistantMessage();
           return;
         }
@@ -182,10 +214,19 @@ export function useCopilotChat({ ticker }) {
       setError(fallbackMessage);
       setErrorCode(payload?.code || (err?.status === 429 ? 'quota_exhausted' : ''));
       setErrorStatus(err?.status || null);
+      setCanContinue(false);
       settleAssistantMessage();
     } finally {
       setIsStreaming(false);
     }
+  }
+
+  async function handleSend(messageText) {
+    await streamAssistantReply(messageText, { showUserMessage: true });
+  }
+
+  async function handleContinue() {
+    await streamAssistantReply(CONTINUE_PROMPT, { showUserMessage: false });
   }
 
   function handleKeyDown(event) {
@@ -201,11 +242,13 @@ export function useCopilotChat({ ticker }) {
     errorStatus,
     handleKeyDown,
     handleSend,
+    handleContinue,
     input,
     isStreaming,
     messages,
     remainingQuota,
     setInput,
     streamMeta,
+    canContinue,
   };
 }

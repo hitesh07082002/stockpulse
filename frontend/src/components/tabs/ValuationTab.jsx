@@ -73,9 +73,10 @@ function buildProjection(currentMetric, growthRate, terminalMultiple, years, cur
   return data;
 }
 
-function ProjectionTooltip({ active, payload }) {
+function ProjectionTooltip({ active, payload, metricLabel }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
+  const resolvedMetricLabel = metricLabel || 'Metric';
 
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-border bg-elevated p-3 shadow-lg">
@@ -84,13 +85,13 @@ function ProjectionTooltip({ active, payload }) {
         {formatCurrency(point.projectedPrice)}
       </span>
       <span className="font-data text-xs text-text-secondary">
-        Metric {formatCompact(point.projectedMetric)}
+        {`Projected ${resolvedMetricLabel}: ${formatCompact(point.projectedMetric)}`}
       </span>
     </div>
   );
 }
 
-function ProjectionChart({ data }) {
+function ProjectionChart({ data, metricLabel }) {
   const containerRef = useRef(null);
   const [chartWidth, setChartWidth] = useState(640);
 
@@ -132,7 +133,7 @@ function ProjectionChart({ data }) {
           tickLine={false}
           width={72}
         />
-        <Tooltip content={<ProjectionTooltip />} />
+        <Tooltip content={<ProjectionTooltip metricLabel={metricLabel} />} />
         <Line
           type="monotone"
           dataKey="projectedPrice"
@@ -414,7 +415,7 @@ function ValuationTab({ ticker }) {
           </div>
 
           {projectionData.length > 0 ? (
-            <ProjectionChart data={projectionData} />
+            <ProjectionChart data={projectionData} metricLabel={currentMetricLabel} />
           ) : (
             <StatePanel message={projectionMessage} />
           )}

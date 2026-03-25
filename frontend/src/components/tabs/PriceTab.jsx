@@ -15,6 +15,57 @@ const COLORS = {
   warningText: '#F59E0B',
 };
 
+function formatPriceLabel(value) {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function formatVolumeLabel(value) {
+  if (value == null || Number.isNaN(value)) return '—';
+  const absolute = Math.abs(Number(value));
+
+  if (absolute >= 1_000_000_000) {
+    return `${(absolute / 1_000_000_000).toFixed(2)}B shares`;
+  }
+
+  if (absolute >= 1_000_000) {
+    return `${(absolute / 1_000_000).toFixed(2)}M shares`;
+  }
+
+  if (absolute >= 1_000) {
+    return `${(absolute / 1_000).toFixed(2)}K shares`;
+  }
+
+  return `${absolute.toFixed(0)} shares`;
+}
+
+function formatChartDateLabel(value) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed);
+}
+
+function buildReadout(point, showVolume) {
+  if (!point) {
+    return {
+      dateLabel: null,
+      price: null,
+      volume: null,
+    };
+  }
+
+  return {
+    dateLabel: formatChartDateLabel(point.date),
+    price: Number(point.adjusted_close ?? point.close),
+    volume: showVolume ? Number(point.volume ?? 0) : null,
+  };
+}
+
 function resolveTextColor() {
   if (typeof window === 'undefined') return COLORS.textSecondaryDark;
   const value = getComputedStyle(document.documentElement)
@@ -60,6 +111,12 @@ function StatePanel({ message, tone = 'default' }) {
 
 function PriceTab({ ticker }) {
   const [selectedRange, setSelectedRange] = useState('1Y');
+  const [showVolume, setShowVolume] = useState(false);
+  const [chartReadout, setChartReadout] = useState({
+    dateLabel: null,
+    price: null,
+    volume: null,
+  });
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const priceSeriesRef = useRef(null);
@@ -78,6 +135,11 @@ function PriceTab({ ticker }) {
   const staleLabel = data?.stale
     ? formatFreshnessLabel(data?.fetched_at || data?.quote_updated_at) || 'Stale'
     : null;
+  const latestPoint = useMemo(() => prices.at(-1) ?? null, [prices]);
+
+  useEffect(() => {
+    setChartReadout(buildReadout(latestPoint, showVolume));
+  }, [latestPoint, showVolume]);
 
   useEffect(() => {
     if (!containerRef.current || !hasPrices) return undefined;
@@ -113,17 +175,22 @@ function PriceTab({ ticker }) {
       crosshairMarkerBackgroundColor: '#09090B',
     });
 
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
-      priceScaleId: '',
-    });
+    let volumeSeries = null;
+    if (showVolume) {
+      volumeSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceScaleId: '',
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
 
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
-    });
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      });
+    }
 
     chartRef.current = chart;
     priceSeriesRef.current = priceSeries;
@@ -135,7 +202,7 @@ function PriceTab({ ticker }) {
       priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [hasPrices, selectedRange]);
+  }, [hasPrices, selectedRange, showVolume]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -154,7 +221,7 @@ function PriceTab({ ticker }) {
     const chart = chartRef.current;
     const priceSeries = priceSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
-    if (!chart || !priceSeries || !volumeSeries || !hasPrices) return;
+    if (!chart || !priceSeries || !hasPrices) return;
 
     priceSeries.setData(
       prices.map((point) => ({
@@ -163,19 +230,49 @@ function PriceTab({ ticker }) {
       })),
     );
 
-    volumeSeries.setData(
-      prices.map((point) => ({
-        time: point.date,
-        value: Number(point.volume ?? 0),
-        color:
-          Number(point.adjusted_close ?? point.close) >= Number(point.open ?? point.close)
-            ? COLORS.volumeUp
-            : COLORS.volumeDown,
-      })),
-    );
+    if (showVolume && volumeSeries) {
+      volumeSeries.setData(
+        prices.map((point) => ({
+          time: point.date,
+          value: Number(point.volume ?? 0),
+          color:
+            Number(point.adjusted_close ?? point.close) >= Number(point.open ?? point.close)
+              ? COLORS.volumeUp
+              : COLORS.volumeDown,
+        })),
+      );
+    }
 
     chart.timeScale().fitContent();
-  }, [hasPrices, prices]);
+  }, [hasPrices, prices, showVolume]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const priceSeries = priceSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    if (!chart || !priceSeries || !hasPrices) return undefined;
+
+    const fallbackReadout = buildReadout(latestPoint, showVolume);
+    const handleCrosshairMove = (param) => {
+      if (!param?.time || !param?.seriesData) {
+        setChartReadout(fallbackReadout);
+        return;
+      }
+
+      const priceData = param.seriesData.get(priceSeries);
+      const volumeData = volumeSeries ? param.seriesData.get(volumeSeries) : null;
+      setChartReadout({
+        dateLabel: formatChartDateLabel(param.time),
+        price: typeof priceData?.value === 'number' ? priceData.value : fallbackReadout.price,
+        volume: showVolume && typeof volumeData?.value === 'number'
+          ? volumeData.value
+          : fallbackReadout.volume,
+      });
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
+    return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
+  }, [hasPrices, latestPoint, showVolume]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -202,6 +299,23 @@ function PriceTab({ ticker }) {
           <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
             Adjusted close
           </span>
+          <button
+            type="button"
+            aria-pressed={showVolume}
+            onClick={() => setShowVolume((current) => !current)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              showVolume
+                ? 'border-accent bg-accent text-text-inverse'
+                : 'border-border bg-surface text-text-tertiary hover:border-border-hover hover:text-text-primary'
+            }`}
+          >
+            {showVolume ? 'Hide volume' : 'Show volume'}
+          </button>
+          {showVolume ? (
+            <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-tertiary">
+              Daily shares traded
+            </span>
+          ) : null}
           {staleLabel ? (
             <span
               className="rounded-full px-3 py-1 text-xs font-medium"
@@ -212,6 +326,24 @@ function PriceTab({ ticker }) {
           ) : null}
         </div>
       </div>
+
+      {hasPrices ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+          {chartReadout.dateLabel ? (
+            <span className="rounded-full border border-border bg-surface px-3 py-1">
+              {chartReadout.dateLabel}
+            </span>
+          ) : null}
+          <span className="rounded-full border border-border bg-surface px-3 py-1">
+            {`Price ${formatPriceLabel(chartReadout.price)}`}
+          </span>
+          {showVolume && chartReadout.volume != null ? (
+            <span className="rounded-full border border-border bg-surface px-3 py-1">
+              {`Volume ${formatVolumeLabel(chartReadout.volume)}`}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {(isLoading || (isFetching && !hasPrices)) ? <ChartSkeleton /> : null}
 

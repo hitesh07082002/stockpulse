@@ -66,6 +66,8 @@ class ProviderEvent:
     type: str
     text: str = ""
     usage: ProviderUsage | None = None
+    finish_reason: str | None = None
+    truncated: bool = False
 
 
 class BaseProvider:
@@ -144,6 +146,12 @@ class AnthropicProvider(BaseProvider):
                         input_tokens=getattr(usage, "input_tokens", 0) or 0,
                         output_tokens=getattr(usage, "output_tokens", 0) or 0,
                     ),
+                )
+                stop_reason = getattr(final_message, "stop_reason", None)
+                yield ProviderEvent(
+                    type="complete",
+                    finish_reason=stop_reason,
+                    truncated=stop_reason == "max_tokens",
                 )
         except Exception as exc:
             if exc.__class__.__name__ in {"APITimeoutError"}:
@@ -231,6 +239,7 @@ class GeminiProvider(BaseProvider):
 
         usage = ProviderUsage()
         accumulated_text = ""
+        finish_reason = None
 
         try:
             for line in response.iter_lines(decode_unicode=True):
@@ -241,6 +250,7 @@ class GeminiProvider(BaseProvider):
                 if chunk_text:
                     yield ProviderEvent(type="text", text=chunk_text)
                 usage = _extract_gemini_usage(payload) or usage
+                finish_reason = _extract_gemini_finish_reason(payload) or finish_reason
         except requests.Timeout as exc:
             raise ProviderTimeoutError("Gemini timed out.", provider=self.name) from exc
         except requests.RequestException as exc:
@@ -252,6 +262,11 @@ class GeminiProvider(BaseProvider):
             ) from exc
 
         yield ProviderEvent(type="usage", usage=usage)
+        yield ProviderEvent(
+            type="complete",
+            finish_reason=finish_reason,
+            truncated=finish_reason == "MAX_TOKENS",
+        )
 
 
 def get_ai_provider():
@@ -338,6 +353,15 @@ def _extract_gemini_usage(payload):
         input_tokens=usage.get("promptTokenCount", 0) or 0,
         output_tokens=usage.get("candidatesTokenCount", 0) or 0,
     )
+
+
+def _extract_gemini_finish_reason(payload):
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        return None
+
+    finish_reason = candidates[0].get("finishReason")
+    return str(finish_reason) if finish_reason else None
 
 
 def _gemini_error_message(response):

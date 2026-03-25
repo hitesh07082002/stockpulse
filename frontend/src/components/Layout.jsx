@@ -199,13 +199,6 @@ function Layout({ children }) {
       <main className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col px-4 py-6">
         {children}
       </main>
-
-      {/* Footer */}
-      <footer className="flex min-h-[var(--shell-footer-height)] items-center justify-center border-t border-border px-4 text-center">
-        <span className="font-body text-sm text-text-tertiary">
-          Powered by SEC EDGAR + AI
-        </span>
-      </footer>
       <AuthModal />
     </div>
   );

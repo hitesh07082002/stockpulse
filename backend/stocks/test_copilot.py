@@ -20,6 +20,7 @@ from stocks.ai_providers import (
     ProviderResponseError,
     ProviderTimeoutError,
     ProviderUsage,
+    _extract_gemini_finish_reason,
     _extract_gemini_text_delta,
     _extract_gemini_usage,
 )
@@ -269,6 +270,14 @@ def test_gemini_chunk_normalization_extracts_delta_and_usage():
     assert usage.output_tokens == 8
 
 
+def test_gemini_chunk_normalization_extracts_finish_reason():
+    payload = {
+        "candidates": [{"finishReason": "MAX_TOKENS"}],
+    }
+
+    assert _extract_gemini_finish_reason(payload) == "MAX_TOKENS"
+
+
 def test_gemini_provider_disables_thinking_for_grounded_copilot(monkeypatch):
     captured = {}
 
@@ -277,7 +286,7 @@ def test_gemini_provider_disables_thinking_for_grounded_copilot(monkeypatch):
 
         def iter_lines(self, decode_unicode=True):
             yield 'data: {"candidates":[{"content":{"parts":[{"text":"Stable answer"}]}}]}'
-            yield 'data: {"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":4}}'
+            yield 'data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":4}}'
 
     def fake_post(url, json=None, stream=None, timeout=None):
         captured["url"] = url
@@ -304,13 +313,17 @@ def test_gemini_provider_disables_thinking_for_grounded_copilot(monkeypatch):
     assert captured["stream"] is True
     assert captured["timeout"] == (5, settings.AI_PROVIDER_TIMEOUT_SECONDS)
     assert captured["json"]["generationConfig"]["thinkingConfig"]["thinkingBudget"] == 0
-    assert [event.type for event in events] == ["text", "usage"]
+    assert [event.type for event in events] == ["text", "usage", "complete"]
     assert events[0].text == "Stable answer"
     assert events[1].usage == ProviderUsage(input_tokens=12, output_tokens=4)
+    assert events[2].finish_reason == "STOP"
+    assert events[2].truncated is False
 
 
 def test_anthropic_provider_normalizes_text_and_usage(monkeypatch):
     class FakeFinalMessage:
+        stop_reason = "end_turn"
+
         class usage:
             input_tokens = 12
             output_tokens = 7
@@ -345,10 +358,12 @@ def test_anthropic_provider_normalizes_text_and_usage(monkeypatch):
             )
         )
 
-    assert [event.type for event in events] == ["text", "text", "usage"]
+    assert [event.type for event in events] == ["text", "text", "usage", "complete"]
     assert events[0].text == "Alpha"
     assert events[1].text == " Beta"
     assert events[2].usage == ProviderUsage(input_tokens=12, output_tokens=7)
+    assert events[3].finish_reason == "end_turn"
+    assert events[3].truncated is False
 
 
 @pytest.mark.django_db
@@ -378,6 +393,47 @@ def test_copilot_endpoint_streams_meta_text_done_and_sets_anon_cookie(api_client
 
     usage_counter = AIUsageCounter.objects.get(day=current_ai_day())
     assert usage_counter.request_count == 1
+
+
+@pytest.mark.django_db
+def test_copilot_endpoint_auto_continues_once_after_max_token_truncation(api_client, company, monkeypatch):
+    class TruncatingProvider:
+        name = "anthropic"
+
+        def __init__(self):
+            self.calls = 0
+
+        def ensure_configured(self):
+            return None
+
+        def stream_response(self, *, system_prompt, conversation):
+            self.calls += 1
+            if self.calls == 1:
+                yield ProviderEvent(type="text", text="First half. ")
+                yield ProviderEvent(type="complete", finish_reason="max_tokens", truncated=True)
+                return
+
+            assert conversation[-2]["role"] == "assistant"
+            assert conversation[-1]["role"] == "user"
+            yield ProviderEvent(type="text", text="Second half.")
+            yield ProviderEvent(type="complete", finish_reason="end_turn", truncated=False)
+
+    provider = TruncatingProvider()
+    monkeypatch.setattr("stocks.copilot.get_ai_provider", lambda: provider)
+
+    response = api_client.post(
+        f"/api/companies/{company.ticker}/copilot/",
+        {"message": "Explain the valuation"},
+        format="json",
+    )
+
+    stream_text = collect_stream(response)
+
+    assert response.status_code == 200
+    assert '"content": "First half. "' in stream_text
+    assert '"content": "Second half."' in stream_text
+    assert '"auto_continued": true' in stream_text
+    assert '"can_continue": false' in stream_text
 
 
 @pytest.mark.django_db
