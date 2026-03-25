@@ -172,7 +172,20 @@ DATABASE_URL=postgres://stockpulse:YOUR_DB_PASSWORD@db:5432/stockpulse
 POSTGRES_PASSWORD=YOUR_DB_PASSWORD
 ALLOWED_HOSTS=stockpulse.hiteshsadhwani.xyz
 CORS_ALLOWED_ORIGINS=https://stockpulse.hiteshsadhwani.xyz
+FRONTEND_APP_ORIGIN=https://stockpulse.hiteshsadhwani.xyz
 ENABLE_GOOGLE_OAUTH_MOCK=False
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+DEFAULT_FROM_EMAIL=noreply@stockpulse.hiteshsadhwani.xyz
+SERVER_EMAIL=noreply@stockpulse.hiteshsadhwani.xyz
+EMAIL_HOST=smtp.your-provider.example
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-smtp-user
+EMAIL_HOST_PASSWORD=your-smtp-password
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+PASSWORD_RESET_TIMEOUT=3600
+PASSWORD_RESET_REQUEST_RATE=5/h
+PASSWORD_RESET_CONFIRM_RATE=10/h
 AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 GOOGLE_OAUTH_CLIENT_ID=your-google-client-id
@@ -186,7 +199,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
 
 Choose a strong POSTGRES_PASSWORD and use it in both `POSTGRES_PASSWORD` and `DATABASE_URL`.
-Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS` are missing, or mock Google OAuth is left enabled.
+Production is fail-closed: the app will refuse to boot if `DEBUG=True`, SQLite is used, `ALLOWED_HOSTS`/`CORS_ALLOWED_ORIGINS`/`FRONTEND_APP_ORIGIN` are missing, an insecure email backend is configured, `DEFAULT_FROM_EMAIL` is blank, SMTP is selected without `EMAIL_HOST`, or mock Google OAuth is left enabled.
+
+Password reset in production depends on the SMTP settings above. After the first deploy, confirm that `/reset-password` can submit successfully and that the email provider delivers the reset email to a real inbox.
 
 Save and exit (Ctrl+X, Y, Enter in nano).
 

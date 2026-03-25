@@ -159,8 +159,10 @@ Google redirect ─┘
 Rules:
 - browsing is public
 - Google sign-in is the primary V1 auth path, with email/password available as fallback
+- password reset is email-based and points back to the frontend over a configured `FRONTEND_APP_ORIGIN`
 - Google auth is backend-managed redirect/callback, not a frontend token-post flow
 - JWTs live in `httpOnly` cookies
+- password changes invalidate previously issued JWT cookies via token revocation checks
 - refresh is cookie-based; the frontend does not store refresh tokens
 - frontend shell state bootstraps from `GET /api/auth/session/`, which also seeds the CSRF cookie used by state-changing auth requests and includes whether a refresh cookie is present so anonymous sessions do not generate noisy failed refresh calls
 - local development may use a debug-only mock Google consent page when real Google OAuth credentials are absent; production never uses that harness

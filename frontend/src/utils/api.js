@@ -268,6 +268,14 @@ export async function loginAuth(payload) {
   return post('/auth/login/', payload);
 }
 
+export async function requestPasswordReset(payload) {
+  return post('/auth/password-reset/request/', payload);
+}
+
+export async function confirmPasswordReset(payload) {
+  return post('/auth/password-reset/confirm/', payload);
+}
+
 export async function refreshAuth() {
   return post('/auth/refresh/', {});
 }

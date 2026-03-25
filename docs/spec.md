@@ -23,7 +23,7 @@ These are the product and engineering choices that should be treated as fixed un
 
 **Dimensions:**
 - 2.1 DONE Launch scope is the S&P 500, with a 25-company seed set used for early development and verification.
-- 2.2 DONE Authentication is in V1: Google sign-in is primary, with email/password as fallback.
+- 2.2 DONE Authentication is in V1: Google sign-in is primary, with email/password plus email-based password reset as fallback and recovery.
 - 2.3 DONE AI quotas are `10/day` anonymous and `50/day` authenticated, plus a `3/minute` IP burst backstop.
 - 2.4 DONE AI cost safety is enforced operationally with limited provider API key credits, while in-product quotas remain `10/day` anonymous and `50/day` authenticated.
 - 2.5 DONE Price charts are line charts only in V1, using adjusted close by default.
@@ -60,7 +60,7 @@ The implementation sequence is defined in detail in [`plan.md`](./plan.md).
 - 5.2 DONE M2 — Ingestion and Canonical Data: schema cut, canonical ingestion, full 500-company rebuild, quotes, snapshots, cached replay from retained raw payloads, and a passing launch coverage audit artifact are landed
 - 5.3 DONE M3 — Public Read APIs and Stock Detail Shell: landing, company detail, overview, and Financials hero
 - 5.4 DONE M4 — Price, Valuation, and Screener: cache-backed price ranges with stale fallback, guarded Qualtrim-style DCF, and a focused `MetricSnapshot` screener
-- 5.5 DONE M5 — Authentication: secure cookies, `/api/auth/session/` bootstrap, Google-first auth flow, frontend auth context, and shell auth modal
+- 5.5 DONE M5 — Authentication: secure cookies, `/api/auth/session/` bootstrap, Google-first auth flow, email/password fallback, password-reset recovery, frontend auth context, and shell auth modal
 - 5.6 DONE M6 — AI Copilot: structured company context, bounded follow-up turns, provider seam, quota enforcement, and canonical SSE UI
 - 5.7 DONE M7 — Hardening and Deploy baseline: scheduled jobs, fail-closed production config, immutable deploys, responsive polish, and docs sync
 

@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage';
 const StockDetailPage = lazy(() => import('./pages/StockDetailPage'));
 const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
+const PasswordResetPage = lazy(() => import('./pages/PasswordResetPage'));
 
 function RouteFallback() {
   return (
@@ -26,6 +27,14 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/reset-password"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <PasswordResetPage />
+              </Suspense>
+            )}
+          />
           <Route
             path="/stock/:ticker"
             element={(

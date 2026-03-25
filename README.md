@@ -12,6 +12,7 @@ Stock research app for the S&P 500: canonical SEC financials, cached price conte
 - **DCF Calculator** — Earnings and cash flow valuations with editable assumptions
 - **AI Copilot** — Ask questions about any company with structured StockPulse data as the primary grounding source
 - **Screener** — Filter and sort 500 companies by PE, margins, growth, debt, and free cash flow
+- **Auth** — Google-first sign-in, email/password fallback, and secure password reset by email
 - **Responsive UI** — Mobile screener cards + filter sheet, responsive stock-detail tabs, and smoke coverage for critical phone-sized flows
 
 ## Tech Stack
@@ -25,6 +26,10 @@ make dev
 # Frontend: http://localhost:5173
 # Backend: http://localhost:8000
 ```
+
+Local auth notes:
+- Dev password-reset emails use the console backend by default, so reset links are printed in the backend terminal.
+- Production requires a real SMTP-backed `EMAIL_BACKEND`, a valid `FRONTEND_APP_ORIGIN`, and `ENABLE_GOOGLE_OAUTH_MOCK=False`.
 
 ## Django Admin
 
@@ -59,6 +64,7 @@ make qa-smoke
 - pushes to `main` trigger the production deploy workflow
 - production deploys use immutable GHCR images tagged by commit SHA
 - the server runs Docker Compose + host `nginx` + PostgreSQL + host cron jobs
+- price cache refresh and snapshot recompute run every 15 minutes in production
 
 See [AGENTS.md](./AGENTS.md) for detailed setup and contributing guidelines.
 
