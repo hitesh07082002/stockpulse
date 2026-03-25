@@ -67,7 +67,7 @@ describe('copilot API helpers', () => {
       return createStreamResponse([
         'data: {"type":"meta","ticker":"AAPL","company_name":"Apple Inc.","quote_freshness":"Quote updated 5m ago","coverage_summary":"Coverage: 10 annual, 8 quarterly","remaining_quota":4}\n\n',
         'data: {"type":"text","content":"Apple is still compounding."}\n\n',
-        'data: {"type":"done","remaining_quota":4}\n\n',
+        'data: {"type":"done","remaining_quota":4,"truncated":false,"can_continue":false,"auto_continued":true,"continuation_count":1}\n\n',
       ]);
     });
 
@@ -92,6 +92,10 @@ describe('copilot API helpers', () => {
     expect(events[2]).toMatchObject({
       type: 'done',
       remainingQuota: 4,
+      truncated: false,
+      canContinue: false,
+      autoContinued: true,
+      continuationCount: 1,
     });
   });
 

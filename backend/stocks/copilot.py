@@ -30,6 +30,12 @@ from .serializers import ChatMessageSerializer
 NEW_YORK = ZoneInfo("America/New_York")
 ANON_COOKIE_SALT = "stocks.ai.anon"
 logger = logging.getLogger(__name__)
+AUTO_CONTINUE_PROMPT = (
+    "Continue the same answer from exactly where you stopped. "
+    "Do not restart, repeat the introduction, or restate completed points. "
+    "Finish the remaining answer naturally and concisely."
+)
+MAX_AUTO_CONTINUATIONS = 1
 
 
 @dataclass
@@ -177,12 +183,32 @@ def reserve_daily_quota(identity):
 
 def _stream_copilot_events(*, provider, conversation, company, identity, meta_payload, system_prompt):
     streamed_text = False
+    aggregated_response = ""
+    continuation_count = 0
+    active_conversation = list(conversation)
+    final_truncated = False
     try:
         yield _sse_event("meta", meta_payload)
-        for event in provider.stream_response(system_prompt=system_prompt, conversation=conversation):
-            if event.type == "text" and event.text:
-                streamed_text = True
-                yield _sse_event("text", {"content": event.text})
+
+        while True:
+            cycle_truncated = False
+            for event in provider.stream_response(system_prompt=system_prompt, conversation=active_conversation):
+                if event.type == "text" and event.text:
+                    streamed_text = True
+                    aggregated_response += event.text
+                    yield _sse_event("text", {"content": event.text})
+                    continue
+
+                if event.type == "complete":
+                    cycle_truncated = bool(event.truncated)
+
+            if cycle_truncated and streamed_text and continuation_count < MAX_AUTO_CONTINUATIONS:
+                continuation_count += 1
+                active_conversation = _build_continuation_conversation(active_conversation, aggregated_response)
+                continue
+
+            final_truncated = cycle_truncated
+            break
 
         if not streamed_text:
             identity, refunded = refund_daily_quota(identity)
@@ -210,6 +236,10 @@ def _stream_copilot_events(*, provider, conversation, company, identity, meta_pa
                 "remaining_quota": identity.remaining,
                 "provider": provider.name,
                 "ticker": company.ticker,
+                "truncated": final_truncated,
+                "can_continue": final_truncated,
+                "auto_continued": continuation_count > 0,
+                "continuation_count": continuation_count,
             },
         )
     except ProviderTimeoutError as exc:
@@ -379,6 +409,13 @@ def _read_or_issue_anon_id(request):
 
 def _hash_usage_key(raw_key):
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def _build_continuation_conversation(conversation, assistant_response):
+    next_conversation = list(conversation)
+    next_conversation.append({"role": "assistant", "content": assistant_response})
+    next_conversation.append({"role": "user", "content": AUTO_CONTINUE_PROMPT})
+    return next_conversation
 
 
 def _sse_event(event_type, payload):

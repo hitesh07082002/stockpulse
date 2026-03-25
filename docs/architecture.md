@@ -204,6 +204,7 @@ Provider contract:
 - provider-native event formats stay behind the adapter boundary
 - zero-output provider failures refund the reserved daily quota instead of charging the user for an empty answer
 - SSE `error` frames preserve normalized provider metadata such as code, provider name, retryability, and upstream status where available
+- the copilot now uses a larger default response budget and auto-continues once when a provider stops at the token ceiling, so long answers do not just die mid-sentence
 
 Conversation scope:
 - bounded follow-up context comes from the active browser session

@@ -17,9 +17,11 @@ function AITab({ ticker, company }) {
     openAuthModal,
   } = useAuth();
   const {
+    canContinue,
     error,
     errorCode,
     errorStatus,
+    handleContinue,
     handleKeyDown,
     handleSend,
     input,
@@ -146,6 +148,22 @@ function AITab({ ticker, company }) {
               </div>
             );
           })}
+
+          {canContinue && !error && (
+            <div className="rounded-lg border border-border bg-elevated/80 p-3 text-sm text-text-secondary">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>The answer reached the response limit. Continue to finish it cleanly.</div>
+                <button
+                  type="button"
+                  onClick={handleContinue}
+                  disabled={isStreaming}
+                  className="rounded-full border border-border px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Continue generating
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className={error.includes('limit')
