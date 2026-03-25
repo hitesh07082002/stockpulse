@@ -53,6 +53,10 @@ function OverviewTab({ ticker, company }) {
       value: formatPercent(data.net_margin),
     },
     {
+      label: 'ROE',
+      value: formatPercent(data.roe),
+    },
+    {
       label: 'Free Cash Flow',
       value: formatLargeNumber(data.free_cash_flow),
     },
