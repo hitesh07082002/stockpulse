@@ -136,10 +136,12 @@ Current V1 environment chain:
 1. pull request CI on GitHub Actions
 2. merge or push to `main`
 3. GitHub Actions builds and pushes the production image to GHCR
-4. the deploy workflow SSHes to the server, writes `APP_IMAGE_TAG=<commit-sha>` into the production `.env`, then runs `docker compose pull web` and `docker compose up -d --remove-orphans` with that exact SHA
+4. the deploy workflow first syncs the committed [`docker-compose.yml`](../docker-compose.yml) to `/opt/stockpulse`, then SSHes to the server, writes `APP_IMAGE_TAG=<commit-sha>` into the production `.env`, and runs `docker compose pull web` plus `docker compose up -d --remove-orphans` with that exact SHA
 5. the workflow runs `python manage.py check --deploy --fail-level WARNING`, then `python manage.py migrate --noinput`
 6. the workflow verifies that the running `stockpulse-web` container was started from the expected SHA-tagged image
 7. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
+
+This sync step matters because `/opt/stockpulse` is a deploy runtime directory, not a live git checkout. Without copying the updated compose file, the server can keep using stale image references such as `:latest` even when the workflow exports a SHA.
 
 There is no separate staging environment in the current V1 deployment contract.
 
