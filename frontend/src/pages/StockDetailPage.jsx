@@ -226,6 +226,7 @@ function StockDetailPage() {
                 <button
                   role="tab"
                   aria-selected={activeTab === key}
+                  aria-label={label}
                   className={`min-h-11 snap-start px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer sm:px-4 ${
                     activeTab === key
                       ? 'text-accent border-accent'
