@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PriceTab from '../components/tabs/PriceTab';
 
@@ -57,6 +57,14 @@ describe('PriceTab', () => {
     fitContentMock.mockReset();
     applyOptionsMock.mockReset();
     removeChartMock.mockReset();
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 360,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 280,
+    });
   });
 
   it('renders the empty-state copy when no history exists', () => {
@@ -132,5 +140,33 @@ describe('PriceTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /hide volume/i }));
 
     expect(removeSeriesMock).toHaveBeenCalledWith(volumeSeriesMock);
+  });
+
+  it('attaches resize tracking when history loads after the initial skeleton state', async () => {
+    usePricesMock.mockReturnValue({
+      data: null,
+      isLoading: true,
+      isFetching: false,
+      isError: false,
+      error: null,
+    });
+
+    const { rerender } = render(<PriceTab ticker="MSFT" />);
+
+    usePricesMock.mockReturnValue({
+      data: {
+        data: [{ date: '2026-03-20', adjusted_close: 413.42, close: 415.67, volume: 22610000 }],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    });
+
+    rerender(<PriceTab ticker="MSFT" />);
+
+    await waitFor(() => {
+      expect(applyOptionsMock).toHaveBeenCalledWith({ width: 360, height: 280 });
+    });
   });
 });

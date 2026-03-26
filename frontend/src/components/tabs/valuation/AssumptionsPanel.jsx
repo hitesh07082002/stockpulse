@@ -21,7 +21,7 @@ function AssumptionField({ label, suffix, helper, value, onChange, step = '0.1' 
         value={value}
         step={step}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-11 w-full rounded-lg border border-border bg-elevated px-3 py-2 font-data text-base text-text-primary outline-none transition focus:border-accent"
+        className="min-h-11 w-full rounded-lg border border-border bg-elevated px-3 py-2 font-data text-base text-text-primary transition focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
       />
       {helper ? <span className="font-body text-xs text-text-tertiary">{helper}</span> : null}
     </label>

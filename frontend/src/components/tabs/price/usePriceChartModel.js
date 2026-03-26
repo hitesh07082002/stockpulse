@@ -69,7 +69,7 @@ export function usePriceChartModel({
   latestPoint,
   showVolume,
 }) {
-  const { hostRef, chartSize } = useChartHostSize();
+  const { hostRef, hostNode, chartSize } = useChartHostSize();
   const [chartReadout, setChartReadout] = useState({
     dateLabel: null,
     price: null,
@@ -84,7 +84,7 @@ export function usePriceChartModel({
   }, [latestPoint, showVolume]);
 
   useEffect(() => {
-    const host = hostRef.current;
+    const host = hostNode;
     if (!host || !hasPrices) return undefined;
 
     const chart = createChart(host, {
@@ -127,7 +127,7 @@ export function usePriceChartModel({
       priceSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [hasPrices, hostRef]);
+  }, [hasPrices, hostNode]);
 
   useEffect(() => {
     const chart = chartRef.current;
