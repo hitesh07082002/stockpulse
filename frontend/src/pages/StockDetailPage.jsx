@@ -14,11 +14,11 @@ const ValuationTab = lazy(() => import('../components/tabs/ValuationTab'));
 const AITab = lazy(() => import('../components/tabs/AITab'));
 
 const TABS = [
-  { key: 'overview', label: 'Overview', Component: OverviewTab },
-  { key: 'financials', label: 'Financials', Component: FinancialsTab },
-  { key: 'price', label: 'Price', Component: PriceTab },
-  { key: 'valuation', label: 'DCF Calculator', Component: ValuationTab },
-  { key: 'ai', label: 'AI', Component: AITab },
+  { key: 'overview', label: 'Overview', mobileLabel: 'Overview', Component: OverviewTab },
+  { key: 'financials', label: 'Financials', mobileLabel: 'Financials', Component: FinancialsTab },
+  { key: 'price', label: 'Price', mobileLabel: 'Price', Component: PriceTab },
+  { key: 'valuation', label: 'DCF Calculator', mobileLabel: 'DCF', Component: ValuationTab },
+  { key: 'ai', label: 'AI', mobileLabel: 'AI', Component: AITab },
 ];
 
 function TabPanelFallback({ tabKey }) {
@@ -218,15 +218,15 @@ function StockDetailPage() {
         {/* ---- Tab Bar ---- */}
         <div className="relative mt-3">
           <ul
-            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none"
+            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none snap-x snap-mandatory"
             role="tablist"
           >
-            {TABS.map(({ key, label }) => (
+            {TABS.map(({ key, label, mobileLabel }) => (
               <li key={key} className="shrink-0" role="presentation">
                 <button
                   role="tab"
                   aria-selected={activeTab === key}
-                  className={`min-h-11 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                  className={`min-h-11 snap-start px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer sm:px-4 ${
                     activeTab === key
                       ? 'text-accent border-accent'
                       : 'text-text-secondary hover:text-text-primary border-transparent'
@@ -235,7 +235,8 @@ function StockDetailPage() {
                     startTransition(() => setActiveTab(key));
                   }}
                 >
-                  {label}
+                  <span className="sm:hidden">{mobileLabel || label}</span>
+                  <span className="hidden sm:inline">{label}</span>
                 </button>
               </li>
             ))}
