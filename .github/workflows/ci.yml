@@ -172,12 +172,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend/playwright.config.js') }}
 
       - name: Install Playwright browsers
-        if: ${{ hashFiles('frontend/playwright.config.*') != '' && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        if: ${{ hashFiles('frontend/playwright.config.*') != '' }}
         working-directory: frontend
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Start backend
         if: ${{ hashFiles('frontend/playwright.config.*') != '' }}
