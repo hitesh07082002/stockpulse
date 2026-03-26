@@ -37,6 +37,11 @@ export default defineConfig({
       use: { ...devices['Pixel 7'] },
       grep: /@responsive/,
     },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 13'], browserName: 'webkit' },
+      grep: /@responsive/,
+    },
   ],
   webServer: externalBaseURL
     ? undefined
