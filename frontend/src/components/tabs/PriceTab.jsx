@@ -308,9 +308,9 @@ function PriceTab({ ticker }) {
       bodyClassName="gap-4"
     >
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-4">
+          <div className="-mx-1 overflow-x-auto px-1 pb-1 scrollbar-none">
+            <div className="flex w-max gap-2">
               {RANGES.map((range) => (
                 <button
                   key={range}
@@ -322,12 +322,14 @@ function PriceTab({ ticker }) {
                       ? 'border-accent bg-accent text-text-inverse'
                       : 'border-border text-text-secondary hover:bg-elevated'
                   }`}
-                >
-                  {range}
-                </button>
-              ))}
+                    >
+                      {range}
+                    </button>
+                  ))}
             </div>
+          </div>
 
+          <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             {hasPrices ? (
               <div className="flex flex-wrap gap-2">
                 {chartReadout.dateLabel ? (
@@ -339,32 +341,32 @@ function PriceTab({ ticker }) {
                 ) : null}
               </div>
             ) : null}
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <button
-              type="button"
-              aria-pressed={showVolume}
-              onClick={() => setShowVolume((current) => !current)}
-              className={`min-h-11 rounded-full border px-4 py-2 text-sm font-medium transition ${
-                showVolume
-                  ? 'border-accent bg-accent text-text-inverse'
-                  : 'border-border bg-surface text-text-secondary hover:border-border-hover hover:text-text-primary'
-              }`}
-            >
-              {showVolume ? 'Hide volume' : 'Show volume'}
-            </button>
-            {showVolume ? (
-              <ReadoutChip>Daily shares traded</ReadoutChip>
-            ) : null}
-            {staleLabel ? (
-              <span
-                className="rounded-full px-3 py-1 text-xs font-medium"
-                style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <button
+                type="button"
+                aria-pressed={showVolume}
+                onClick={() => setShowVolume((current) => !current)}
+                className={`min-h-11 rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  showVolume
+                    ? 'border-accent bg-accent text-text-inverse'
+                    : 'border-border bg-surface text-text-secondary hover:border-border-hover hover:text-text-primary'
+                }`}
               >
-                Stale · {staleLabel}
-              </span>
-            ) : null}
+                {showVolume ? 'Hide volume' : 'Show volume'}
+              </button>
+              {showVolume ? (
+                <ReadoutChip>Daily shares traded</ReadoutChip>
+              ) : null}
+              {staleLabel ? (
+                <span
+                  className="rounded-full px-3 py-1 text-xs font-medium"
+                  style={{ backgroundColor: COLORS.warningBg, color: COLORS.warningText }}
+                >
+                  Stale · {staleLabel}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -386,12 +388,17 @@ function PriceTab({ ticker }) {
         ) : null}
 
         {!isLoading && !isError && hasPrices ? (
-          <StockDetailChartStage preset="price" className="border border-border bg-base/20">
-            <div
-              ref={chartHostRef}
-              className="h-full w-full"
-            />
-          </StockDetailChartStage>
+          <div className="-mx-4 sm:mx-0">
+            <StockDetailChartStage
+              preset="price"
+              className="rounded-none border-y border-border bg-base/20 sm:rounded-xl sm:border"
+            >
+              <div
+                ref={chartHostRef}
+                className="h-full w-full"
+              />
+            </StockDetailChartStage>
+          </div>
         ) : null}
       </div>
     </StockDetailSection>
