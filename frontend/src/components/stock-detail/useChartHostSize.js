@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useChartHostSize() {
-  const hostRef = useRef(null);
+  const [hostNode, setHostNode] = useState(null);
   const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
 
+  const hostRef = useCallback((node) => {
+    setHostNode(node);
+  }, []);
+
   useEffect(() => {
-    const host = hostRef.current;
+    const host = hostNode;
     if (!host) return undefined;
 
     const updateSize = () => {
@@ -32,10 +36,11 @@ export function useChartHostSize() {
         window.removeEventListener('resize', updateSize);
       }
     };
-  }, []);
+  }, [hostNode]);
 
   return {
     hostRef,
+    hostNode,
     chartSize,
     isCompact: chartSize.width > 0 && chartSize.width < 520,
   };
