@@ -201,10 +201,12 @@ function PriceTab({ ticker }) {
             preset="price"
             className="rounded-none border-y border-border bg-base/20 sm:rounded-xl sm:border"
           >
-            <div
-              ref={chartHostRef}
-              className="h-full w-full"
-            />
+            <div className="h-full w-full px-5 md:px-4 lg:px-0">
+              <div
+                ref={chartHostRef}
+                className="h-full w-full"
+              />
+            </div>
           </StockDetailChartStage>
         ) : null}
         bleedChart

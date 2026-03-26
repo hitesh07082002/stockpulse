@@ -46,6 +46,23 @@ function buildReadout(point, showVolume) {
   };
 }
 
+function applyEdgePadding(chart, width) {
+  const timeScale = chart.timeScale();
+  if (typeof timeScale.getVisibleLogicalRange !== 'function'
+    || typeof timeScale.setVisibleLogicalRange !== 'function') {
+    return;
+  }
+
+  const logicalRange = timeScale.getVisibleLogicalRange();
+  if (!logicalRange) return;
+
+  const edgePadding = width > 0 && width < 480 ? 1.1 : 0.6;
+  timeScale.setVisibleLogicalRange({
+    from: logicalRange.from - edgePadding,
+    to: logicalRange.to + edgePadding,
+  });
+}
+
 export function usePriceChartModel({
   hasPrices,
   prices,
@@ -180,7 +197,8 @@ export function usePriceChartModel({
     }
 
     chart.timeScale().fitContent();
-  }, [hasPrices, prices, showVolume]);
+    applyEdgePadding(chart, chartSize.width);
+  }, [chartSize.width, hasPrices, prices, showVolume]);
 
   useEffect(() => {
     const chart = chartRef.current;
