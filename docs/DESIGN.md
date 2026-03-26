@@ -323,6 +323,16 @@
 - Sticky headers on long tables.
 - Use row dividers and hover states instead of zebra stripes.
 - Missing values render as em dashes, not zeroes.
+- The mobile hierarchy is:
+  - summary result cards
+  - warnings or guardrails
+  - assumption controls
+  - projection chart
+  - supporting methodology text
+- On mobile, assumption inputs stack in one column and keep full-width 44px+ controls.
+- On tablet and desktop, the split workspace returns only when both panes still feel intentional and not cramped.
+- The projection chart follows the stock-detail chart-height rules instead of relying on a single fixed desktop height.
+- The mode toggle behaves like a segmented control and remains thumb-friendly on mobile.
 
 ### Filter Controls
 - Use compact selects, segmented pills, and min/max fields.
@@ -376,6 +386,14 @@
 - Optional volume bars may sit below the main price series when they improve context without crowding the view.
 - SMA overlays use neutral secondary lines, not accent.
 - Stale data badge belongs near the chart header, not inside the plot area.
+- Price controls and readout chips belong in the chart header, not floating over the plot.
+- Volume stays off by default. If enabled, it must read clearly as daily shares traded for the selected ticker and date.
+- Price chart height adapts by breakpoint instead of staying fixed:
+  - mobile: 280-320px
+  - tablet: 320-380px
+  - desktop: 380-500px
+- On mobile, x-axis labels collapse to a small readable set rather than trying to show every date tick.
+- The chart must never force horizontal page overflow.
 
 ### DCF Heatmap
 - Use a restrained two-direction palette: muted green for upside, muted red for downside.
@@ -453,14 +471,29 @@ Auth modal           | Button loading state | n/a                             | 
 - Financial metric cards collapse to a 2x2 grid.
 - AI input sticks to the bottom edge.
 - Tables convert to cards when horizontal scroll would become painful.
+- Stock-detail tabs keep a single-column content flow.
+- Chart toolbars wrap cleanly and never create a second horizontal scroll region.
+- Price readout chips may wrap into multiple rows, but the plot area remains visually primary.
+- DCF summary cards stack vertically or into a 2-up grid; they must not become squeezed desktop cards.
+- The valuation workspace should feel summary-first on mobile, not like a compressed two-pane analyst desktop.
 
 ### Tablet
 - Preserve the density of desktop where possible.
 - Avoid large empty gutters.
+- Prefer a relaxed two-column layout only when both columns remain readable without reducing chart or form quality.
+- Stock-detail tabs may use denser metric grids than mobile, but controls should still feel touch-native.
 
 ### Desktop
 - Use width to improve scan speed, not to inflate whitespace.
 - Financials tab should feel dashboard-like, not like a stretched phone view.
+- Stock-detail charts, cards, and forms should align to a shared section rhythm so the tabs feel like one product, not separate mini apps.
+
+### Stock Detail Responsive Rules
+- The sticky company header and tab rail are shared shell elements; individual tabs should inherit their spacing and not redefine page-level padding ad hoc.
+- Price, Financials, Valuation, and AI should all render inside the same section-width and vertical rhythm contract.
+- No stock-detail tab may rely on fixed pixel heights as its only layout strategy.
+- Any chart without a useful mobile presentation must provide a compact textual summary or a card-based fallback.
+- Touch targets for tab controls, chart toggles, assumption toggles, and filter-like pills remain at least 44px on mobile.
 
 ## Accessibility
 - Minimum 44px touch targets
@@ -521,3 +554,4 @@ STEP | USER DOES                    | USER FEELS               | DESIGN SUPPORTS
 | Mar 20, 2026 | Dark mode as canonical theme | Better fit for a serious finance dashboard |
 | Mar 22, 2026 | Added explicit data-viz contract | Prevents chart and table drift during the live V1 polish cycle |
 | Mar 22, 2026 | Restored low-friction auth to the V1 design | Keeps browsing public while supporting account-based AI upgrades |
+| Mar 26, 2026 | Refined stock-detail responsive and chart behavior rules | Anchors the upcoming Price + DCF responsive hardening in a shared design contract |

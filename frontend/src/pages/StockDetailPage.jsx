@@ -2,6 +2,11 @@ import React, { Suspense, lazy, startTransition, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCompany } from '../hooks/useStockData';
 import OverviewTab from '../components/tabs/OverviewTab';
+import {
+  StockDetailChartStage,
+  StockDetailMetricGrid,
+  StockDetailSection,
+} from '../components/stock-detail/StockDetailPrimitives';
 
 const FinancialsTab = lazy(() => import('../components/tabs/FinancialsTab'));
 const PriceTab = lazy(() => import('../components/tabs/PriceTab'));
@@ -9,41 +14,42 @@ const ValuationTab = lazy(() => import('../components/tabs/ValuationTab'));
 const AITab = lazy(() => import('../components/tabs/AITab'));
 
 const TABS = [
-  { key: 'overview', label: 'Overview', Component: OverviewTab },
-  { key: 'financials', label: 'Financials', Component: FinancialsTab },
-  { key: 'price', label: 'Price', Component: PriceTab },
-  { key: 'valuation', label: 'DCF Calculator', Component: ValuationTab },
-  { key: 'ai', label: 'AI', Component: AITab },
+  { key: 'overview', label: 'Overview', mobileLabel: 'Overview', Component: OverviewTab },
+  { key: 'financials', label: 'Financials', mobileLabel: 'Financials', Component: FinancialsTab },
+  { key: 'price', label: 'Price', mobileLabel: 'Price', Component: PriceTab },
+  { key: 'valuation', label: 'DCF Calculator', mobileLabel: 'DCF', Component: ValuationTab },
+  { key: 'ai', label: 'AI', mobileLabel: 'AI', Component: AITab },
 ];
 
 function TabPanelFallback({ tabKey }) {
   const showCardGrid = tabKey === 'financials' || tabKey === 'valuation';
   const showChart = tabKey === 'financials' || tabKey === 'price' || tabKey === 'valuation';
+  const chartPreset = tabKey === 'price' ? 'price' : 'projection';
 
   return (
-    <div className="flex flex-col gap-4">
-      {showCardGrid && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2">
-              <div className="skeleton h-3 w-24 rounded" />
-              <div className="skeleton h-7 w-32 rounded" />
-              <div className="skeleton h-3 w-16 rounded" />
-            </div>
-          ))}
-        </div>
-      )}
-      {showChart && (
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <div className="skeleton h-[360px] w-full rounded-lg" />
-        </div>
-      )}
-      {!showCardGrid && !showChart && (
-        <div className="bg-surface border border-border rounded-lg p-6">
-          <div className="skeleton h-6 w-40 rounded" />
-          <div className="mt-4 skeleton h-40 w-full rounded-lg" />
-        </div>
-      )}
+    <div className="flex flex-col gap-6">
+      <StockDetailSection bodyClassName="gap-4">
+        <div className="skeleton h-7 w-40 rounded" />
+        <div className="skeleton h-4 w-72 max-w-full rounded" />
+        {showCardGrid ? (
+          <StockDetailMetricGrid className={tabKey === 'valuation' ? 'xl:grid-cols-3' : ''}>
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="flex flex-col gap-2">
+                <div className="skeleton h-3 w-24 rounded" />
+                <div className="skeleton h-8 w-28 rounded" />
+                <div className="skeleton h-3 w-20 rounded" />
+              </div>
+            ))}
+          </StockDetailMetricGrid>
+        ) : null}
+        {showChart ? (
+          <StockDetailChartStage preset={chartPreset} className="bg-base/20">
+            <div className="h-full w-full skeleton" />
+          </StockDetailChartStage>
+        ) : (
+          <div className="skeleton h-40 w-full rounded-xl" />
+        )}
+      </StockDetailSection>
     </div>
   );
 }
@@ -140,9 +146,9 @@ function StockDetailPage() {
   const ActiveComponent = TABS.find((t) => t.key === activeTab)?.Component;
 
   return (
-    <div className="flex flex-col min-h-[var(--shell-content-min-height)]">
+    <div className="flex min-h-[var(--shell-content-min-height)] w-full flex-col gap-6">
       {/* ---- Persistent Company Header ---- */}
-      <div className="sticky top-[var(--shell-header-height)] z-40 bg-base border-b border-border px-4 py-4">
+      <div className="sticky top-[var(--shell-header-height)] z-40 border-b border-border bg-base/95 pb-4 backdrop-blur-md">
         {isLoading ? (
           <div className="flex flex-col gap-3 pb-4">
             <div className="skeleton h-8 w-48 rounded" />
@@ -212,15 +218,16 @@ function StockDetailPage() {
         {/* ---- Tab Bar ---- */}
         <div className="relative mt-3">
           <ul
-            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none"
+            className="flex gap-0 border-b border-border overflow-x-auto pr-8 scrollbar-none snap-x snap-mandatory"
             role="tablist"
           >
-            {TABS.map(({ key, label }) => (
+            {TABS.map(({ key, label, mobileLabel }) => (
               <li key={key} className="shrink-0" role="presentation">
                 <button
                   role="tab"
                   aria-selected={activeTab === key}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                  aria-label={label}
+                  className={`min-h-11 snap-start px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer sm:px-4 ${
                     activeTab === key
                       ? 'text-accent border-accent'
                       : 'text-text-secondary hover:text-text-primary border-transparent'
@@ -229,7 +236,8 @@ function StockDetailPage() {
                     startTransition(() => setActiveTab(key));
                   }}
                 >
-                  {label}
+                  <span className="sm:hidden">{mobileLabel || label}</span>
+                  <span className="hidden sm:inline">{label}</span>
                 </button>
               </li>
             ))}
@@ -239,7 +247,7 @@ function StockDetailPage() {
       </div>
 
       {/* ---- Tab Content ---- */}
-      <div className="py-6 flex-1" role="tabpanel">
+      <div className="flex-1 pt-1 sm:pt-2" role="tabpanel">
         {ActiveComponent && (
           <Suspense fallback={<TabPanelFallback tabKey={activeTab} />}>
             <ActiveComponent ticker={ticker} company={company} />

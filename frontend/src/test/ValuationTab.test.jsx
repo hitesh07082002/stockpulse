@@ -9,6 +9,16 @@ vi.mock('../hooks/useStockData', () => ({
   useValuationInputs: (...args) => useValuationInputsMock(...args),
 }));
 
+vi.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }) => <div data-testid="projection-chart">{children}</div>,
+  LineChart: ({ children }) => <div>{children}</div>,
+  CartesianGrid: () => null,
+  Line: () => null,
+  Tooltip: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+}));
+
 describe('ValuationTab', () => {
   beforeEach(() => {
     useValuationInputsMock.mockReset();
