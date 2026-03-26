@@ -63,6 +63,7 @@ export function buildProjection(currentMetric, growthRate, terminalMultiple, yea
 }
 
 function resolveDraftValue(modeDraft, fallbackValue) {
+  // Preserve an explicit empty string so clearing a field does not silently restore defaults.
   return modeDraft ?? (fallbackValue != null ? String(fallbackValue) : '');
 }
 

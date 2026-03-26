@@ -39,7 +39,7 @@ export default defineConfig({
     },
     {
       name: 'mobile-safari',
-      use: { ...devices['iPhone 13'], browserName: 'webkit' },
+      use: { ...devices['iPhone 13'] },
       grep: /@responsive/,
     },
   ],

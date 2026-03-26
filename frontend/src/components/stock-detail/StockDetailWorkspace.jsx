@@ -1,8 +1,5 @@
 import React from 'react';
-
-function joinClasses(...parts) {
-  return parts.filter(Boolean).join(' ');
-}
+import { joinClasses } from '../../utils/joinClasses';
 
 export function ChartToolbarRail({ children, className = '' }) {
   return (

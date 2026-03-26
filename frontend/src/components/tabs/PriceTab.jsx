@@ -10,6 +10,7 @@ import {
   ChartWorkspaceShell,
 } from '../stock-detail/StockDetailWorkspace';
 import { usePriceChartModel } from './price/usePriceChartModel';
+import { joinClasses } from '../../utils/joinClasses';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '5Y', 'MAX'];
 
@@ -17,10 +18,6 @@ const COLORS = {
   warningBg: 'rgba(245, 158, 11, 0.12)',
   warningText: '#F59E0B',
 };
-
-function joinClasses(...parts) {
-  return parts.filter(Boolean).join(' ');
-}
 
 function formatPriceLabel(value) {
   if (value == null || Number.isNaN(value)) return '—';
@@ -73,6 +70,40 @@ function ChartSkeleton() {
   );
 }
 
+function getWorkspaceState({
+  isLoading,
+  isFetching,
+  hasPrices,
+  isError,
+  error,
+  data,
+}) {
+  if (isLoading || (isFetching && !hasPrices)) {
+    return <ChartSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <StockDetailStatePanel
+        tone="error"
+        height="price"
+        message={error?.message || 'Price data unavailable. Retry.'}
+      />
+    );
+  }
+
+  if (!hasPrices) {
+    return (
+      <StockDetailStatePanel
+        height="price"
+        message={data?.message || 'No price history available'}
+      />
+    );
+  }
+
+  return null;
+}
+
 function ReadoutChip({ children, emphasis = false }) {
   return (
     <span
@@ -112,24 +143,14 @@ function PriceTab({ ticker }) {
     latestPoint,
     showVolume,
   });
-  const workspaceState = (isLoading || (isFetching && !hasPrices))
-    ? <ChartSkeleton />
-    : isError
-      ? (
-        <StockDetailStatePanel
-          tone="error"
-          height="price"
-          message={error?.message || 'Price data unavailable. Retry.'}
-        />
-      )
-      : !hasPrices
-        ? (
-          <StockDetailStatePanel
-            height="price"
-            message={data?.message || 'No price history available'}
-          />
-        )
-        : null;
+  const workspaceState = getWorkspaceState({
+    isLoading,
+    isFetching,
+    hasPrices,
+    isError,
+    error,
+    data,
+  });
 
   return (
     <StockDetailSection

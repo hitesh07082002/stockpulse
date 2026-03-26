@@ -19,11 +19,16 @@ const MODE_OPTIONS = [
 
 function ModeToggle({ modeKey, onChange }) {
   return (
-    <div className="inline-flex flex-wrap gap-2 rounded-full border border-border bg-elevated p-1">
+    <div
+      role="group"
+      aria-label="Valuation mode"
+      className="inline-flex flex-wrap gap-2 rounded-full border border-border bg-elevated p-1"
+    >
       {MODE_OPTIONS.map((option) => (
         <button
           key={option.key}
           type="button"
+          aria-pressed={modeKey === option.key}
           onClick={() => onChange(option.key)}
           className={`min-h-11 rounded-full px-4 py-2 text-sm font-medium transition cursor-pointer ${
             modeKey === option.key

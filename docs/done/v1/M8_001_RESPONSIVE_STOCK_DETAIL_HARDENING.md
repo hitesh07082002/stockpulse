@@ -33,9 +33,9 @@ Make the existing stock-detail experience fully responsive and production-grade 
 **Status:** DONE
 
 **Dimensions:**
-- 2.1.1 DONE [StockDetailPage.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/pages/StockDetailPage.jsx) shell rhythm, sticky header behavior, and tab-body spacing.
-- 2.1.2 DONE [PriceTab.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/components/tabs/PriceTab.jsx) responsive toolbar, readout, chart frame, and optional volume behavior.
-- 2.1.3 DONE [ValuationTab.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/components/tabs/ValuationTab.jsx) mobile hierarchy, assumptions panel, summary cards, and projection chart.
+- 2.1.1 DONE [StockDetailPage.jsx](../../../frontend/src/pages/StockDetailPage.jsx) shell rhythm, sticky header behavior, and tab-body spacing.
+- 2.1.2 DONE [PriceTab.jsx](../../../frontend/src/components/tabs/PriceTab.jsx) responsive toolbar, readout, chart frame, and optional volume behavior.
+- 2.1.3 DONE [ValuationTab.jsx](../../../frontend/src/components/tabs/ValuationTab.jsx) mobile hierarchy, assumptions panel, summary cards, and projection chart.
 - 2.1.4 DONE Shared chart and stock-detail responsive primitives needed by those surfaces.
 - 2.1.5 DONE Mobile and tablet Playwright coverage for Price and DCF usability.
 
@@ -44,8 +44,8 @@ Make the existing stock-detail experience fully responsive and production-grade 
 **Status:** DONE
 
 **Dimensions:**
-- 2.2.1 DONE Audit [FinancialsTab.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/components/tabs/FinancialsTab.jsx) for alignment with the shared primitives created here.
-- 2.2.2 DONE Audit [OverviewTab.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/components/tabs/OverviewTab.jsx) and [AITab.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/components/tabs/AITab.jsx) for overflow, density, and shell consistency after the stock-detail system changes.
+- 2.2.1 DONE Audit [FinancialsTab.jsx](../../../frontend/src/components/tabs/FinancialsTab.jsx) for alignment with the shared primitives created here.
+- 2.2.2 DONE Audit [OverviewTab.jsx](../../../frontend/src/components/tabs/OverviewTab.jsx) and [AITab.jsx](../../../frontend/src/components/tabs/AITab.jsx) for overflow, density, and shell consistency after the stock-detail system changes.
 
 ---
 
@@ -82,7 +82,7 @@ This workstream depends on strengthening the design source of truth before imple
 **Status:** DONE
 
 **Dimensions:**
-- 4.2.1 DONE [StockDetailPage.jsx](/Users/hiteshsadhwani/Desktop/StockPulse/frontend/src/pages/StockDetailPage.jsx) owns shell concerns only: sticky header, tab rail, and tab-body container rules.
+- 4.2.1 DONE [StockDetailPage.jsx](../../../frontend/src/pages/StockDetailPage.jsx) owns shell concerns only: sticky header, tab rail, and tab-body container rules.
 - 4.2.2 DONE Individual tabs consume shared layout primitives rather than redefining their own page-level spacing and chart sizing.
 - 4.2.3 DONE Fixed pixel heights stop being the sole responsive strategy for stock-detail charts and skeletons.
 
