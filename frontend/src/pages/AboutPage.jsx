@@ -65,7 +65,7 @@ export default function AboutPage() {
         <p className="font-body text-sm text-text-secondary">
           Built by{' '}
           <a
-            href="https://github.com/hiteshsadhwani"
+            href="https://github.com/hitesh07082002"
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-accent hover:text-accent-hover transition-colors"
