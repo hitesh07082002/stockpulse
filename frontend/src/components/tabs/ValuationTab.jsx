@@ -106,6 +106,7 @@ function ProjectionTooltip({ active, payload, metricLabel }) {
 function ProjectionChart({ data, metricLabel }) {
   const hostRef = useRef(null);
   const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
+  const isCompact = chartSize.width > 0 && chartSize.width < 520;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -145,23 +146,25 @@ function ProjectionChart({ data, metricLabel }) {
             width={chartSize.width}
             height={chartSize.height}
             data={data}
-            margin={{ top: 10, right: 24, left: 0, bottom: 0 }}
+            margin={isCompact
+              ? { top: 8, right: 10, left: -20, bottom: 0 }
+              : { top: 10, right: 24, left: 0, bottom: 0 }}
           >
             <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: isCompact ? 11 : 12 }}
               axisLine={false}
               tickLine={false}
               interval="preserveStartEnd"
-              minTickGap={24}
+              minTickGap={isCompact ? 12 : 24}
             />
             <YAxis
               tickFormatter={(value) => `$${value.toFixed(0)}`}
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: isCompact ? 11 : 12 }}
               axisLine={false}
               tickLine={false}
-              width={72}
+              width={isCompact ? 52 : 72}
             />
             <Tooltip content={<ProjectionTooltip metricLabel={metricLabel} />} />
             <Line
@@ -169,8 +172,8 @@ function ProjectionChart({ data, metricLabel }) {
               dataKey="projectedPrice"
               stroke="var(--color-accent)"
               strokeWidth={2.5}
-              dot={{ r: 4, fill: 'var(--color-accent)' }}
-              activeDot={{ r: 6 }}
+              dot={{ r: isCompact ? 3 : 4, fill: 'var(--color-accent)' }}
+              activeDot={{ r: isCompact ? 5 : 6 }}
             />
           </LineChart>
         ) : null}
@@ -385,7 +388,7 @@ function ValuationTab({ ticker }) {
         subtitle="A compact, assumption-driven five-year valuation workspace."
         actions={<ModeToggle modeKey={modeKey} onChange={setModeKey} />}
       >
-        <StockDetailMetricGrid className="xl:grid-cols-3">
+        <StockDetailMetricGrid className="grid-cols-2 xl:grid-cols-3">
           <StockDetailMetricCard
             label="Implied Year 5 Price"
             value={formatCurrency(futurePrice)}
@@ -407,6 +410,7 @@ function ValuationTab({ ticker }) {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)] xl:items-start">
         <StockDetailSection
+          className="order-2 xl:order-1"
           title="Assumptions"
           subtitle="Use the current company data as a sober starting point, then adjust to match your thesis."
         >
@@ -463,6 +467,7 @@ function ValuationTab({ ticker }) {
         </StockDetailSection>
 
         <StockDetailSection
+          className="order-1 xl:order-2"
           title="5-Year Projection"
           subtitle={projectionMessage}
         >
