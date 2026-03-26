@@ -1,9 +1,6 @@
 import React from 'react';
 import { getChartHeightClasses } from './stockDetailLayout';
-
-function joinClasses(...parts) {
-  return parts.filter(Boolean).join(' ');
-}
+import { joinClasses } from '../../utils/joinClasses';
 
 export function StockDetailSection({
   title,
