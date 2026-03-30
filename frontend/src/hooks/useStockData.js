@@ -40,6 +40,7 @@ export function usePrices(ticker, range) {
     queryFn: () => fetchPrices(ticker, range),
     enabled: !!ticker,
     staleTime: 60 * 1000,
+    placeholderData: (previousData) => previousData,
   });
 }
 
