@@ -304,6 +304,7 @@ git push origin main
 
 GitHub Actions will: build image → push to GHCR → sync the committed `docker-compose.yml` to `/opt/stockpulse` → SSH deploy → migrate → health check.
 The deploy workflow also pins `APP_IMAGE_TAG` to the exact commit SHA that passed CI and verifies that `stockpulse-web` is running that same SHA-tagged image.
+The production image repository is `ghcr.io/hitesh07082002/stockpulse-app`.
 
 Important note:
 - the deploy health check hits Gunicorn on `127.0.0.1:8000`, but it must send the production `Host` header plus `X-Forwarded-Proto: https`

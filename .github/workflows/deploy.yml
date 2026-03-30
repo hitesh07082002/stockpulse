@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+env:
+  APP_IMAGE_REPOSITORY: ghcr.io/hitesh07082002/stockpulse-app
+
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
@@ -29,7 +32,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ${{ env.APP_IMAGE_REPOSITORY }}:${{ github.sha }}
 
       - name: Sync deploy compose file
         uses: appleboy/scp-action@v0.1.7

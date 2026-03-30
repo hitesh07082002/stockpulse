@@ -1,6 +1,6 @@
 services:
   web:
-    image: ghcr.io/hitesh07082002/stockpulse:${APP_IMAGE_TAG:?APP_IMAGE_TAG is required}
+    image: ghcr.io/hitesh07082002/stockpulse-app:${APP_IMAGE_TAG:?APP_IMAGE_TAG is required}
     container_name: stockpulse-web
     ports:
       - "127.0.0.1:8000:8000"

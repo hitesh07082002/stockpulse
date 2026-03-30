@@ -142,6 +142,7 @@ Current V1 environment chain:
 7. the workflow verifies the backend with an internal Gunicorn probe to `http://127.0.0.1:8000/api/health/` while sending the production `Host` and `X-Forwarded-Proto: https` headers so `ALLOWED_HOSTS` and `SECURE_SSL_REDIRECT` behave exactly like the live nginx path
 
 This sync step matters because `/opt/stockpulse` is a deploy runtime directory, not a live git checkout. Without copying the updated compose file, the server can keep using stale image references such as `:latest` even when the workflow exports a SHA.
+The production image repository is `ghcr.io/hitesh07082002/stockpulse-app`; the app still deploys by immutable commit SHA tags through `APP_IMAGE_TAG`.
 
 There is no separate staging environment in the current V1 deployment contract.
 
