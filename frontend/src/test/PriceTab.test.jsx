@@ -21,6 +21,7 @@ const removeSeriesMock = vi.fn();
 const subscribeCrosshairMoveMock = vi.fn();
 const unsubscribeCrosshairMoveMock = vi.fn();
 const fitContentMock = vi.fn();
+const setVisibleLogicalRangeMock = vi.fn();
 const applyOptionsMock = vi.fn();
 const removeChartMock = vi.fn();
 
@@ -36,6 +37,7 @@ vi.mock('lightweight-charts', () => ({
     unsubscribeCrosshairMove: unsubscribeCrosshairMoveMock,
     timeScale: () => ({
       fitContent: fitContentMock,
+      setVisibleLogicalRange: setVisibleLogicalRangeMock,
     }),
     applyOptions: applyOptionsMock,
     remove: removeChartMock,
@@ -55,6 +57,7 @@ describe('PriceTab', () => {
     subscribeCrosshairMoveMock.mockReset();
     unsubscribeCrosshairMoveMock.mockReset();
     fitContentMock.mockReset();
+    setVisibleLogicalRangeMock.mockReset();
     applyOptionsMock.mockReset();
     removeChartMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -167,6 +170,43 @@ describe('PriceTab', () => {
 
     await waitFor(() => {
       expect(applyOptionsMock).toHaveBeenCalledWith({ width: 360, height: 280 });
+    });
+  });
+
+  it('resets the visible range when switching from 1Y to a shorter window', async () => {
+    const oneYearData = Array.from({ length: 251 }, (_, index) => ({
+      date: `2025-03-${String((index % 28) + 1).padStart(2, '0')}`,
+      adjusted_close: 200 + index,
+      close: 200 + index,
+      volume: 1_000_000 + index,
+    }));
+    const oneMonthData = Array.from({ length: 20 }, (_, index) => ({
+      date: `2026-03-${String(index + 1).padStart(2, '0')}`,
+      adjusted_close: 240 + index,
+      close: 240 + index,
+      volume: 2_000_000 + index,
+    }));
+
+    usePricesMock.mockImplementation((_ticker, range) => ({
+      data: {
+        data: range === '1M' ? oneMonthData : oneYearData,
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    }));
+
+    render(<PriceTab ticker="MSFT" />);
+
+    await waitFor(() => {
+      expect(setVisibleLogicalRangeMock).toHaveBeenCalledWith({ from: -1.1, to: 251.1 });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '1M', exact: true }));
+
+    await waitFor(() => {
+      expect(setVisibleLogicalRangeMock).toHaveBeenLastCalledWith({ from: -1.1, to: 20.1 });
     });
   });
 });

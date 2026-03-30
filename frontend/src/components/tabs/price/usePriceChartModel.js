@@ -46,20 +46,16 @@ function buildReadout(point, showVolume) {
   };
 }
 
-function applyEdgePadding(chart, width) {
+function applyEdgePadding(chart, width, pointCount) {
   const timeScale = chart.timeScale();
-  if (typeof timeScale.getVisibleLogicalRange !== 'function'
-    || typeof timeScale.setVisibleLogicalRange !== 'function') {
+  if (typeof timeScale.setVisibleLogicalRange !== 'function' || pointCount <= 1) {
     return;
   }
 
-  const logicalRange = timeScale.getVisibleLogicalRange();
-  if (!logicalRange) return;
-
   const edgePadding = width > 0 && width < 480 ? 1.1 : 0.6;
   timeScale.setVisibleLogicalRange({
-    from: logicalRange.from - edgePadding,
-    to: logicalRange.to + edgePadding,
+    from: -edgePadding,
+    to: pointCount - 1 + edgePadding,
   });
 }
 
@@ -197,7 +193,7 @@ export function usePriceChartModel({
     }
 
     chart.timeScale().fitContent();
-    applyEdgePadding(chart, chartSize.width);
+    applyEdgePadding(chart, chartSize.width, prices.length);
   }, [chartSize.width, hasPrices, prices, showVolume]);
 
   useEffect(() => {
